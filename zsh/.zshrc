@@ -4,13 +4,8 @@
 # Path to your Oh My Zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
 
-plugins=(git)
-source $ZSH/oh-my-zsh.sh
-
-# User configuration
-# export MANPATH="/usr/local/man:$MANPATH"
-
-# ALIASES
+# Theme
+ZSH_THEME="agnoster"
 
 # nvm
 export NVM_DIR="$HOME/.nvm"
@@ -27,3 +22,17 @@ esac
 # brew and deno
 eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 . "/home/hssn/.deno/env"
+
+# Keep this at the bottom
+plugins=(git)
+source $ZSH/oh-my-zsh.sh
+
+# Theme customisation below Source
+prompt_context() {
+  if [[ "$USER" != "$DEFAULT_USER" || -n "$SSH_CLIENT" ]]; then
+    # prompt_segment yellow default "⚔️ %F{black}$USER%f"
+    prompt_segment "#1e1e2e" "#cdd6f4" "⚔️ $USER" 
+    prompt_segment white default "%F{black}%*%f"
+    # prompt_segment "#1e1e2e" "#cdd6f4" "%*"
+  fi
+}
