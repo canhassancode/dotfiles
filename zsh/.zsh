@@ -1,0 +1,1 @@
+/home/hssn/.zsh
