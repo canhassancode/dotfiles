@@ -7,5 +7,7 @@
 rm zsh/.zshrc
 cp ~/.zshrc zsh/
 
-
+# Update tmux config
+rm tmux/.tmux.conf
+cp ~/.tmux.conf tmux/
 
