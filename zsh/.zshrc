@@ -23,6 +23,12 @@ esac
 eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 . "/home/hssn/.deno/env"
 
+# aliases
+alias 'txn'='tmux new -s'
+alias 'txa'='tmux attach -t'
+alias 'txk'='tmux kill-session -t'
+alias 'txl'='tmux ls'
+
 # Keep this at the bottom
 plugins=(git)
 source $ZSH/oh-my-zsh.sh
