@@ -20,8 +20,8 @@ case ":$PATH:" in
 esac
 
 # brew and deno
-eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-. "/home/hssn/.deno/env"
+# eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+# . "/home/hssn/.deno/env"
 
 # aliases
 alias 'txn'='tmux new -s'
@@ -42,3 +42,27 @@ prompt_context() {
     # prompt_segment "#1e1e2e" "#cdd6f4" "%*"
   fi
 }
+
+# Gousto profiles
+alias db-staging="AWS_PROFILE=EngineerBeta-584614786727 gousto env connect-tunnel staging"
+alias artifact-login="AWS_PROFILE=EngineerCodeArtifact-472493421475 aws sso login"
+alias beta-login="AWS_PROFILE=EngineerBeta-584614786727 aws sso login"
+export artefacts_engineer="AWS_PROFILE=EngineerCodeArtifact-472493421475"
+
+function ca-authenticate() {
+  set -x
+  export CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token --domain gousto --domain-owner 472493421475 --query authorizationToken --output text --profile EngineerCodeArtifact-472493421475)
+  npm config set //gousto-472493421475.d.codeartifact.eu-west-1.amazonaws.com/npm/proxy-repository/:_authToken=$CODEARTIFACT_AUTH_TOKEN
+}
+
+function force-rockets {
+  git push origin `git rev-parse --abbrev-ref HEAD`:env-rockets --force --no-verify
+}
+
+function getHashEmail {
+  echo "$(echo -n "hassanabbas110@outlook.com" | md5)@gousto.info" | pbcopy
+}
+
+# Plugins
+source $(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+source $(brew --prefix)/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh

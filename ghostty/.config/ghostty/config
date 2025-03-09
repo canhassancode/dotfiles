@@ -1,0 +1,10 @@
+font-family=0xProto Nerd Font
+window-title-font-family=0xProto Nerd Font
+font-thicken = true
+font-size = 13 
+
+theme=catppuccin-mocha
+cursor-style=block
+
+# custom-shader = crt.glsl
+# custom-shader = bloom.glsl
