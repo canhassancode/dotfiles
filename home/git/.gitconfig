@@ -1,0 +1,20 @@
+[alias]
+	s = status
+	p = push
+	pl = pull
+	f = fetch
+	ch = checkout
+	coa = !git add -A && git commit -m
+
+[core]
+	excludesfile = ~/.gitignore_global
+[include]
+    path = ~/.gitconfig.local  # Include local config for personal details
+
+[difftool "sourcetree"]
+	cmd = opendiff \"$LOCAL\" \"$REMOTE\"
+	path = 
+[mergetool "sourcetree"]
+	cmd = /Applications/Sourcetree.app/Contents/Resources/opendiff-w.sh \"$LOCAL\" \"$REMOTE\" -ancestor \"$BASE\" -merge \"$MERGED\"
+	trustExitCode = true
+
