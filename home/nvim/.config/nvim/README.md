@@ -1,5 +1,4 @@
-# NEOVIM
+# 💤 LazyVim
 
-```shell
-git clone https://github.com/canhassancode/neovim "${XDG_CONFIG_HOME:-$HOME/.config}"/nvim
-```
+A starter template for [LazyVim](https://github.com/LazyVim/LazyVim).
+Refer to the [documentation](https://lazyvim.github.io/installation) to get started.
