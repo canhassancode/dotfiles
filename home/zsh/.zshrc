@@ -12,6 +12,10 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 
+export NVM_DIR="$HOME/.nvm"
+  [ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"  # This loads nvm
+  [ -s "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm" ] && \. "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm"  # This loads nvm bash_completion
+
 # pnpm
 export PNPM_HOME="/home/hssn/.local/share/pnpm"
 case ":$PATH:" in
@@ -28,6 +32,7 @@ alias 'txn'='tmux new -s'
 alias 'txa'='tmux attach -t'
 alias 'txk'='tmux kill-session -t'
 alias 'txl'='tmux ls'
+alias 'g'='git' 
 
 # Keep this at the bottom
 plugins=(git)
@@ -44,6 +49,7 @@ prompt_context() {
 }
 
 # Gousto profiles
+# alias AWS_PROFILE=EngineerCodeArtifact-472493421475 aws sso login
 alias db-staging="AWS_PROFILE=EngineerBeta-584614786727 gousto env connect-tunnel staging"
 alias artifact-login="AWS_PROFILE=EngineerCodeArtifact-472493421475 aws sso login"
 alias beta-login="AWS_PROFILE=EngineerBeta-584614786727 aws sso login"
@@ -56,7 +62,7 @@ function ca-authenticate() {
 }
 
 function force-rockets {
-  git push origin `git rev-parse --abbrev-ref HEAD`:env-rockets --force --no-verify
+  git push origin `git rev-parse --abbrev-ref HEAD`:env-rockets --force-with-lease --no-verify
 }
 
 function getHashEmail {
@@ -66,3 +72,7 @@ function getHashEmail {
 # Plugins
 source $(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh
 source $(brew --prefix)/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+
+function force-regression-manual {
+  git push origin `git rev-parse --abbrev-ref HEAD`:regression-manual --force-with-lease --no-verify
+}
