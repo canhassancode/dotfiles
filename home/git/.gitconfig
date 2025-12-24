@@ -9,7 +9,7 @@
 [core]
 	excludesfile = ~/.gitignore_global
 [include]
-    path = ~/.gitconfig.local  # Include local config for personal details
+	path = ~/.gitconfig.local  # Include local config for personal details
 
 [difftool "sourcetree"]
 	cmd = opendiff \"$LOCAL\" \"$REMOTE\"

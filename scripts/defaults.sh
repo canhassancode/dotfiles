@@ -10,9 +10,6 @@ if [[ -n ${1:-} ]]; then # Checks if ohmyzsh is required
   sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 fi
 
-brew install zsh-autosuggestions
-brew install zsh-syntax-highlighting
-
 # Disable strict mode before installing casks
 set +e
 
@@ -20,7 +17,8 @@ set +e
 git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
 
 # Nerd font (change if necessary)
-brew install --cask font-0xproto-nerd-font
+brew install --cask font-jetbrains-mono
+brew install --cask font-jetbrains-mono-nerd-font
 
 # Re-enable strict mode
 set -euo pipefail

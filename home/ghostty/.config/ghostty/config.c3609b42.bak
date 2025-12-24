@@ -8,4 +8,3 @@ cursor-style=block
 
 # custom-shader = crt.glsl
 # custom-shader = bloom.glsl
-keybind = shift+enter=text:\n
