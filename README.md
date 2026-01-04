@@ -9,9 +9,7 @@
 The setup for this should be fairly simple as the scripts automate a lot of the process:
 
 ```shell
-# Step 1: 🚀 From the root dotfiles directory run the following command
-chmod +x install.sh 
-
-# Step 2: 🚀 Execute install script
-./install.sh 
+# Step 1: 🚀 Install GNU Stow
+# Step 2: Run the following
+stow -t ~ hyprland git etc.
 ```
