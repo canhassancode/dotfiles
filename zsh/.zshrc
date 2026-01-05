@@ -9,10 +9,16 @@ plugins=(git
 ##--ALIASES--##
 ###############
 alias 'dev'='pnpm run dev'
-alias 'sso-oneforge-dev'='aws sso login --profile oneforge-dev && export AWS_PROFILE=oneforge-dev'
-alias 'sso-oneforge-prod'='aws sso login --profile oneforge-production && export AWS_PROFILE=oneforge-production'
-alias 'sso-hassan-dev'='aws sso login --profile hassan-dev && export AWS_PROFILE=hassan-dev'
-alias 'sso-hassan-prod'='aws sso login --profile hassan-production && export AWS_PROFILE=hassan-production'
+if [ -f ~/.zsh_aliases ]; then
+    source ~/.zsh_aliases
+fi 
+
+#################
+##--FUNCTIONS--##
+#################
+if [ -f ~/.zsh_functions ]; then
+    source ~/.zsh_functions
+fi
 
 #######################
 #--FASTFETCH SCREEN--##
