@@ -28,6 +28,7 @@ PanelWindow {
 
     property double volFloat: 0.0 
     property bool showVolBar: false 
+    property bool isMuted: false
 
     property var lastTotal: 0
     property var lastIdle: 0
@@ -54,26 +55,30 @@ PanelWindow {
 
     Process {
         id: volumeProc
-        // awk prints just the number (e.g. 0.55)
-        command: ["sh", "-c", "wpctl get-volume @DEFAULT_AUDIO_SINK@ | awk '{print $2}'"]
+        // SIMPLE COMMAND: No awk/sed. We want the raw output like "Volume: 0.55 [MUTED]"
+        command: ["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"]
         
         stdout: SplitParser {
             onRead: data => {
                 if (!data) return
                 
-                // Parse "0.55" or "0.55 [MUTED]"
-                var val = parseFloat(data.trim())
-                if (isNaN(val)) return
+                // 1. Check for Muted Status
+                root.isMuted = data.includes("MUTED")
 
-                // LOGIC: Did volume change?
-                // We use 0.01 tolerance to avoid floating point glitches
-                if (Math.abs(val - root.volFloat) > 0.01) {
-                    root.showVolBar = true
-                    volHideTimer.restart() // Keep bar open while changing
+                // 2. Extract the number using Regex
+                // Looks for "Volume: " followed by digits/dots
+                var match = data.match(/Volume:\s+([\d\.]+)/)
+                if (match) {
+                    var val = parseFloat(match[1])
+                    
+                    // Trigger animation if value changed OR mute state changed
+                    if (Math.abs(val - root.volFloat) > 0.01 || root.isMuted !== (data.includes("MUTED"))) {
+                        root.showVolBar = true
+                        volHideTimer.restart()
+                    }
+
+                    root.volFloat = val
                 }
-
-                root.volFloat = val
-                root.volumeVal = Math.round(val * 100) + "%"
             }
         }
     }
@@ -355,8 +360,12 @@ PanelWindow {
 
                     // 1. The Icon (Always visible)
                     Text {
-                        text: root.volFloat > 0.5 ? "" : (root.volFloat > 0 ? "" : "")
+                        // LOGIC: Check isMuted first
+                        text: root.isMuted ? "" : (root.volFloat > 0.5 ? "" : (root.volFloat > 0 ? "" : ""))
+                        
+                        // VISUAL TWEAK: Turn icon Red if muted
                         color: colWhite
+                        
                         font.family: fontFamily
                         font.pixelSize: 14
                     }
@@ -364,24 +373,25 @@ PanelWindow {
                     // 2. The Bar (Revealed on change)
                     Rectangle {
                         id: barTrack
-                        width: 50 // Fixed width for the bar area
+                        width: 50
                         height: 6
                         radius: 3
-                        color: "#44000000" // Dark background for track
+                        color: "#44000000"
                         
-                        // Prevent the bar from squishing the icon when shrinking
-                        visible: root.showVolBar || volPill.width > 35
+                        visible: root.showVolBar || volPill.implicitWidth > 40
+                        opacity: root.showVolBar ? 1 : 0
+                        Behavior on opacity { NumberAnimation { duration: 200 } }
 
-                        // The Fill Level
                         Rectangle {
                             height: parent.height
                             radius: parent.radius
-                            color: colWhite
                             
-                            // Width based on volume %
+                            // VISUAL TWEAK: Turn bar Red if muted, otherwise White
+                            color: root.isMuted ? "#ff5555" : colWhite
+                            
                             width: parent.width * root.volFloat
-                            
                             Behavior on width { NumberAnimation { duration: 100 } }
+                            Behavior on color { ColorAnimation { duration: 200 } }
                         }
                     }
                 }
