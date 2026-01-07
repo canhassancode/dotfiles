@@ -8,7 +8,6 @@ import QtQuick.Layouts
 PanelWindow {
     id: root
 
-    // Theme
     property color colBg: '#510c114a'
     property color colCyan: "#0db9d7"
     property color colBlue: "#7aa2f7"
@@ -19,7 +18,6 @@ PanelWindow {
     property string fontFamily: "JetBrainsMono Nerd Font"
     property string iconFontFamily: "Font Awesome 7 Free"
 
-    // System Data
     property string cpuVal: "0%"
     property string memVal: "0%"
     property string gpuVal: "0°C"
@@ -33,7 +31,6 @@ PanelWindow {
     property var lastTotal: 0
     property var lastIdle: 0
 
-    // Layout
     anchors.top: true
     anchors.left: true
     anchors.right: true
@@ -53,36 +50,6 @@ PanelWindow {
         onTriggered: volumeProc.running = true
     }
 
-    Process {
-        id: volumeProc
-        // SIMPLE COMMAND: No awk/sed. We want the raw output like "Volume: 0.55 [MUTED]"
-        command: ["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"]
-        
-        stdout: SplitParser {
-            onRead: data => {
-                if (!data) return
-                
-                // 1. Check for Muted Status
-                root.isMuted = data.includes("MUTED")
-
-                // 2. Extract the number using Regex
-                // Looks for "Volume: " followed by digits/dots
-                var match = data.match(/Volume:\s+([\d\.]+)/)
-                if (match) {
-                    var val = parseFloat(match[1])
-                    
-                    // Trigger animation if value changed OR mute state changed
-                    if (Math.abs(val - root.volFloat) > 0.01 || root.isMuted !== (data.includes("MUTED"))) {
-                        root.showVolBar = true
-                        volHideTimer.restart()
-                    }
-
-                    root.volFloat = val
-                }
-            }
-        }
-    }
-
     Timer {
         interval: 2000
         running: true
@@ -93,6 +60,31 @@ PanelWindow {
             memProc.running = true
             tempProc.running = true
             gpuProc.running = true
+        }
+    }
+
+    Process {
+        id: volumeProc
+        
+        command: ["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"]
+        
+        stdout: SplitParser {
+            onRead: data => {
+                if (!data) return
+                
+                root.isMuted = data.includes("MUTED")
+                var match = data.match(/Volume:\s+([\d\.]+)/)
+                if (match) {
+                    var val = parseFloat(match[1])
+                    
+                    if (Math.abs(val - root.volFloat) > 0.01 || root.isMuted !== (data.includes("MUTED"))) {
+                        root.showVolBar = true
+                        volHideTimer.restart()
+                    }
+
+                    root.volFloat = val
+                }
+            }
         }
     }
 
@@ -221,7 +213,6 @@ PanelWindow {
         }
     }
 
-    // Center Elements
     Rectangle {
         id: workspaceContainer
         anchors.centerIn: parent
@@ -283,7 +274,6 @@ PanelWindow {
         }
     }
 
-    // Right Container
     Rectangle {
         id: rightContainer
         anchors.top: parent.top
@@ -306,7 +296,6 @@ PanelWindow {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 8
 
-            // Right Clock
             Rectangle {
                 id: clockContainer
                 width: clockRow.implicitWidth + 20
@@ -337,19 +326,16 @@ PanelWindow {
                 }
             }
 
-            // --- Volume Widget ---
             Rectangle {
                 id: volPill
-                
-                // Animation Logic
-                // If showing bar: Width is 100. If not: Width is 30 (Icon only)
-                implicitWidth: root.showVolBar ? 100 : 30
+
+                implicitWidth: root.showVolBar ? 150 : 40
                 height: 25
                 radius: 15
+                
                 color: colPill
-                clip: true // Important! Cuts off the bar when it shrinks
+                clip: true
 
-                // Smooth Animation
                 Behavior on implicitWidth { 
                     NumberAnimation { duration: 300; easing.type: Easing.OutBack } 
                 }
@@ -358,24 +344,19 @@ PanelWindow {
                     anchors.centerIn: parent
                     spacing: 8
 
-                    // 1. The Icon (Always visible)
                     Text {
-                        // LOGIC: Check isMuted first
                         text: root.isMuted ? "" : (root.volFloat > 0.5 ? "" : (root.volFloat > 0 ? "" : ""))
-                        
-                        // VISUAL TWEAK: Turn icon Red if muted
                         color: colWhite
                         
                         font.family: fontFamily
                         font.pixelSize: 14
                     }
 
-                    // 2. The Bar (Revealed on change)
                     Rectangle {
                         id: barTrack
-                        width: 50
-                        height: 6
-                        radius: 3
+                        width: 100
+                        height: 8
+                        radius: 15
                         color: "#44000000"
                         
                         visible: root.showVolBar || volPill.implicitWidth > 40
@@ -386,7 +367,6 @@ PanelWindow {
                             height: parent.height
                             radius: parent.radius
                             
-                            // VISUAL TWEAK: Turn bar Red if muted, otherwise White
                             color: root.isMuted ? "#ff5555" : colWhite
                             
                             width: parent.width * root.volFloat
@@ -397,7 +377,6 @@ PanelWindow {
                 }
             }
 
-            // Right Connection
             Rectangle {
                 id: connectionContainer
                 anchors.margins: 4
