@@ -17,17 +17,20 @@ PanelWindow {
     property color colInactive: "#444b6a"
     property color colWhite: "#ffffff"
     property string fontFamily: "JetBrainsMono Nerd Font"
-    property string iconFontFamily: "Font Awesome 6 Free"
+    property string iconFontFamily: "Font Awesome 7 Free"
 
     // System Data
     property string cpuVal: "0%"
     property string memVal: "0%"
     property string gpuVal: "0°C"
     property string tempVal: "0°C"
+    property string volumeVal: "0%"
+
+    property double volFloat: 0.0 
+    property bool showVolBar: false 
 
     property var lastTotal: 0
     property var lastIdle: 0
-
 
     // Layout
     anchors.top: true
@@ -35,6 +38,45 @@ PanelWindow {
     anchors.right: true
     implicitHeight: 35
     color: colBg
+
+    Timer {
+        id: volHideTimer
+        interval: 1000
+        onTriggered: root.showVolBar = false
+    }
+
+    Timer {
+        interval: 100
+        running: true
+        repeat: true
+        onTriggered: volumeProc.running = true
+    }
+
+    Process {
+        id: volumeProc
+        // awk prints just the number (e.g. 0.55)
+        command: ["sh", "-c", "wpctl get-volume @DEFAULT_AUDIO_SINK@ | awk '{print $2}'"]
+        
+        stdout: SplitParser {
+            onRead: data => {
+                if (!data) return
+                
+                // Parse "0.55" or "0.55 [MUTED]"
+                var val = parseFloat(data.trim())
+                if (isNaN(val)) return
+
+                // LOGIC: Did volume change?
+                // We use 0.01 tolerance to avoid floating point glitches
+                if (Math.abs(val - root.volFloat) > 0.01) {
+                    root.showVolBar = true
+                    volHideTimer.restart() // Keep bar open while changing
+                }
+
+                root.volFloat = val
+                root.volumeVal = Math.round(val * 100) + "%"
+            }
+        }
+    }
 
     Timer {
         interval: 2000
@@ -235,38 +277,168 @@ PanelWindow {
             }
         }
     }
-    
-    // Right Clock
+
+    // Right Container
     Rectangle {
-        id: clockContainer
+        id: rightContainer
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         anchors.right: parent.right
         anchors.margins: 4
-        width: clockRow.implicitWidth + 20
-        height: 25
-        radius: 15
 
-        color: colPill
+        width: rightRowLayout.implicitWidth + 20
+        height: 25
+
+        color: "transparent"
 
         Behavior on width {
             NumberAnimation { duration: 200; easing.type: Easing.OutQuad }
         }
 
-
         RowLayout {
-            id: clockRow
-            anchors.centerIn: parent
+            id: rightRowLayout
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
 
-            SystemClock {
-                id: clock
-                precision: SystemClock.Seconds
+            // Right Clock
+            Rectangle {
+                id: clockContainer
+                width: clockRow.implicitWidth + 20
+                height: 25
+                radius: 15
+
+                color: colPill
+
+                Behavior on width {
+                    NumberAnimation { duration: 200; easing.type: Easing.OutQuad }
+                }
+
+
+                RowLayout {
+                    id: clockRow
+                    anchors.centerIn: parent
+
+                    SystemClock {
+                        id: clock
+                        precision: SystemClock.Seconds
+                    }
+
+                    Text {
+                        text: Qt.formatDateTime(clock.date, "hh:mm:ss")
+                        color: colWhite
+                        font { pixelSize: 14; bold: true; family: fontFamily; }
+                    }
+                }
             }
 
-            Text {
-                text: Qt.formatDateTime(clock.date, "hh:mm:ss")
-                color: colWhite
-                font { pixelSize: 14; bold: true; family: fontFamily; }
+            // --- Volume Widget ---
+            Rectangle {
+                id: volPill
+                
+                // Animation Logic
+                // If showing bar: Width is 100. If not: Width is 30 (Icon only)
+                implicitWidth: root.showVolBar ? 100 : 30
+                height: 25
+                radius: 15
+                color: colPill
+                clip: true // Important! Cuts off the bar when it shrinks
+
+                // Smooth Animation
+                Behavior on implicitWidth { 
+                    NumberAnimation { duration: 300; easing.type: Easing.OutBack } 
+                }
+
+                RowLayout {
+                    anchors.centerIn: parent
+                    spacing: 8
+
+                    // 1. The Icon (Always visible)
+                    Text {
+                        text: root.volFloat > 0.5 ? "" : (root.volFloat > 0 ? "" : "")
+                        color: colWhite
+                        font.family: fontFamily
+                        font.pixelSize: 14
+                    }
+
+                    // 2. The Bar (Revealed on change)
+                    Rectangle {
+                        id: barTrack
+                        width: 50 // Fixed width for the bar area
+                        height: 6
+                        radius: 3
+                        color: "#44000000" // Dark background for track
+                        
+                        // Prevent the bar from squishing the icon when shrinking
+                        visible: root.showVolBar || volPill.width > 35
+
+                        // The Fill Level
+                        Rectangle {
+                            height: parent.height
+                            radius: parent.radius
+                            color: colWhite
+                            
+                            // Width based on volume %
+                            width: parent.width * root.volFloat
+                            
+                            Behavior on width { NumberAnimation { duration: 100 } }
+                        }
+                    }
+                }
+            }
+
+            // Right Connection
+            Rectangle {
+                id: connectionContainer
+                anchors.margins: 4
+                width: connectionIcon.implicitWidth + 20
+                height: 25
+                radius: 15
+
+                color: colPill
+
+                Text {
+                    id: connectionIcon
+                    anchors.centerIn: parent
+                    text: ""
+                    color: colWhite
+                    font { pixelSize: 14; bold: true; family: fontFamily; }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    // onClicked: Connection.toggle() // TODO: Add connection menu
+                    cursorShape: Qt.PointingHandCursor
+
+                    hoverEnabled: true
+                }
+            }
+
+            // Right Power
+            Rectangle {
+                id: powerContainer
+                anchors.margins: 4
+                width: powerIcon.implicitWidth + 20
+                height: 25
+                radius: 15
+
+                color: colPill
+
+                Text {
+                    id: powerIcon
+                    anchors.centerIn: parent
+                    text: ""
+                    color: colWhite
+                    font { pixelSize: 14; bold: true; family: fontFamily; }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    // onClicked: Power.shutdown() TODO: Add power menu
+                    cursorShape: Qt.PointingHandCursor
+
+                    hoverEnabled: true
+                }
             }
         }
     }
