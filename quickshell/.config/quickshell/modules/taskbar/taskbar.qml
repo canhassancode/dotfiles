@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Hyprland
 import Quickshell.Io
+import Quickshell.Widgets
 import QtQuick
 import QtQuick.Layouts
 import QtQml
@@ -38,6 +39,148 @@ Instantiator {
         property var lastTotal: 0
         property var lastIdle: 0
 
+        // Filtered list of actual application windows (not background processes)
+        property var filteredApps: []
+        
+        // Track last focused instance index per app (for cycling)
+        property var lastFocusedIndex: ({})
+
+        function updateFilteredApps() {
+            var apps = []
+            var seenClasses = {}
+            
+            // Access toplevels
+            var toplevels = Hyprland.toplevels.values || Hyprland.toplevels || []
+            
+            for (var i = 0; i < toplevels.length; i++) {
+                var toplevel = toplevels[i]
+                
+                // Get app class from wayland object or extract from title
+                var appClass = ""
+                var waylandAppId = ""
+                if (toplevel.wayland) {
+                    var wayland = toplevel.wayland
+                    waylandAppId = wayland.appId || wayland.class || ""
+                }
+                
+                var title = toplevel.title || ""
+                
+                // Skip if no title (likely background process)
+                if (!title || title === "") continue
+                
+                // Try to extract app name from title first (more reliable)
+                if (title.includes("—")) {
+                    var parts = title.split("—")
+                    if (parts.length > 1) {
+                        appClass = parts[parts.length - 1].trim().toLowerCase()
+                        // Clean up common suffixes
+                        appClass = appClass.replace(/\s+(browser|launcher|app)$/i, "")
+                    }
+                }
+                
+                // If no class from title, try wayland appId (but only if it's not a background process)
+                if (!appClass || appClass === "") {
+                    if (waylandAppId && waylandAppId !== "") {
+                        var waylandLower = waylandAppId.toLowerCase()
+                        // Only use wayland appId if it's not a known background process
+                        if (waylandLower !== "electron" && 
+                            !waylandLower.includes("ime") &&
+                            !waylandLower.includes("input")) {
+                            appClass = waylandLower
+                        }
+                    }
+                }
+                
+                // If still no class, skip this window
+                if (!appClass || appClass === "") continue
+                
+                // Filter out system processes and background services
+                var skipClasses = [
+                    "default ime", "ime", "input", "agent",
+                    "electron", "waybar", "quickshell",
+                    "fcitx", "ibus", "xwayland", "xwayland",
+                    "desktop", "background"
+                ]
+                var shouldSkip = false
+                var appClassLower = appClass.toLowerCase()
+                for (var j = 0; j < skipClasses.length; j++) {
+                    // Check if appClass contains or equals the skip pattern
+                    if (appClassLower === skipClasses[j] || 
+                        appClassLower.includes(skipClasses[j])) {
+                        shouldSkip = true
+                        break
+                    }
+                }
+                if (shouldSkip) continue
+                
+                // Also skip if appClass is too short or looks like a system process
+                if (appClass.length < 2) continue
+                
+                // Only add unique app classes (one entry per app type)
+                // Store all instances for this app class so we can cycle through them
+                if (!seenClasses[appClass]) {
+                    seenClasses[appClass] = {
+                        instances: [],
+                        waylandAppId: waylandAppId  // Store wayland appId for icon lookup
+                    }
+                }
+                seenClasses[appClass].instances.push(toplevel)
+            }
+            
+            // Convert to array format with all instances per app
+            var result = []
+            for (var appClass in seenClasses) {
+                var appData = seenClasses[appClass]
+                result.push({
+                    class: appClass,
+                    instances: appData.instances,
+                    waylandAppId: appData.waylandAppId
+                })
+            }
+            
+            filteredApps = result
+        }
+        
+        // Simple function to get icon - just use wayland appId directly
+        function getIconSource(waylandAppId, appClass) {
+            var lowerClass = appClass ? appClass.toLowerCase() : ""
+            
+            // Special case only for cursor
+            if (lowerClass === "cursor") {
+                var cursorIcon = Quickshell.iconPath("co.anysphere.cursor")
+                if (cursorIcon && cursorIcon !== "") {
+                    return cursorIcon
+                }
+            }
+            
+            // Use wayland appId if available (most reliable)
+            if (waylandAppId && waylandAppId !== "") {
+                var iconPath = Quickshell.iconPath(waylandAppId)
+                if (iconPath && iconPath !== "") {
+                    return iconPath
+                }
+            }
+            
+            // Try app class name
+            if (appClass && appClass !== "") {
+                var classIcon = Quickshell.iconPath(appClass)
+                if (classIcon && classIcon !== "") {
+                    return classIcon
+                }
+            }
+            
+            // Return empty to trigger fallback text (first letter)
+            return ""
+        }
+
+        Component.onCompleted: updateFilteredApps()
+        
+        // Update when toplevels change - try different approaches
+        Connections {
+            target: Hyprland
+            function onToplevelsChanged() { root.updateFilteredApps() }
+        }
+
         anchors.top: true
         anchors.left: true
         anchors.right: true
@@ -67,6 +210,7 @@ Instantiator {
                 memProc.running = true
                 tempProc.running = true
                 gpuProc.running = true
+                root.updateFilteredApps()
             }
         }
 
@@ -221,6 +365,150 @@ Instantiator {
         }
 
         Rectangle {
+            id: appsContainer
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.left: leftContainer.right
+            anchors.leftMargin: 8
+            anchors.margins: 4
+            
+            width: appsRow.implicitWidth + 20
+            height: 25
+            radius: 15
+            color: colPill
+            clip: true
+
+            Behavior on width { NumberAnimation { duration: 200 } }
+
+            RowLayout {
+                id: appsRow
+                anchors.centerIn: parent
+                spacing: 8
+
+                Repeater {
+                    id: appsRepeater
+                    model: root.filteredApps
+
+                    Rectangle {
+                        id: appPill
+                        height: 20
+                        width: 20
+                        radius: 10
+                        color: "transparent"
+
+                        property var appData: modelData
+                        property int instanceCount: appData ? appData.instances.length : 0
+                        property string iconSource: appData ? root.getIconSource(appData.waylandAppId, appData.class) : ""
+
+                        Image {
+                            id: appIcon
+                            anchors.centerIn: parent
+                            width: 20
+                            height: 20
+                            source: appPill.iconSource
+                            fillMode: Image.PreserveAspectFit
+                            opacity: 1.0  // Full opacity for icon
+                            smooth: true
+                            antialiasing: true
+                            asynchronous: false  // Load synchronously to catch errors faster
+                            
+                            // Fallback to text if icon not found or broken
+                            onStatusChanged: {
+                                if (status === Image.Error || status === Image.Null) {
+                                    fallbackText.visible = true
+                                    appIcon.visible = false
+                                } else if (status === Image.Ready) {
+                                    fallbackText.visible = false
+                                    appIcon.visible = true
+                                } else if (status === Image.Loading) {
+                                    fallbackText.visible = false
+                                    appIcon.visible = true
+                                }
+                            }
+                        }
+                        
+                        // Fallback text if icon not available
+                        Text {
+                            id: fallbackText
+                            anchors.centerIn: parent
+                            visible: !appIcon.visible || appIcon.status === Image.Error
+                            text: {
+                                if (!appData) return "?"
+                                var displayName = appData.class || "?"
+                                // Show first letter if single instance, or count if multiple
+                                if (instanceCount > 1) {
+                                    return instanceCount.toString()
+                                }
+                                return displayName.charAt(0).toUpperCase()
+                            }
+                            color: colWhite
+                            font.family: fontFamily
+                            font.pixelSize: 10
+                            font.bold: true
+                        }
+                        
+                        // Badge for multiple instances
+                        Rectangle {
+                            visible: instanceCount > 1
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.margins: -2
+                            width: 8
+                            height: 8
+                            radius: 4
+                            color: colPill
+                            border.width: 1
+                            border.color: colWhite
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (!appData || !appData.instances || appData.instances.length === 0) return
+                                
+                                var appClass = appData.class
+                                var instances = appData.instances
+                                
+                                // Get the last focused index for this app
+                                var currentIndex = root.lastFocusedIndex[appClass]
+                                
+                                if (currentIndex === undefined) {
+                                    // First click: find the currently active instance, or use first one
+                                    currentIndex = 0
+                                    for (var i = 0; i < instances.length; i++) {
+                                        if (instances[i].activated) {
+                                            currentIndex = i
+                                            break
+                                        }
+                                    }
+                                } else {
+                                    // Subsequent clicks: cycle to the next instance
+                                    currentIndex = (currentIndex + 1) % instances.length
+                                }
+                                
+                                // Update the last focused index
+                                root.lastFocusedIndex[appClass] = currentIndex
+                                
+                                // Get the instance to focus
+                                var instance = instances[currentIndex]
+                                
+                                // Focus the window and switch to its workspace
+                                if (instance.address) {
+                                    Hyprland.dispatch("focuswindow address:" + instance.address)
+                                }
+                                if (instance.workspace) {
+                                    instance.workspace.activate()
+                                }
+                            }
+                            cursorShape: Qt.PointingHandCursor
+                            hoverEnabled: true
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
             id: workspaceContainer
             anchors.centerIn: parent
             width: workspaceRow.implicitWidth + 20
@@ -326,7 +614,7 @@ Instantiator {
                         }
 
                         Text {
-                            text: Qt.formatDateTime(clock.date, "hh:mm:ss")
+                            text: Qt.formatDateTime(clock.date, "ddd d MMM hh:mm:ss")
                             color: colWhite
                             font { pixelSize: 14; bold: true; family: fontFamily; }
                         }
