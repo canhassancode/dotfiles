@@ -26,24 +26,19 @@ Instantiator {
         property string fontFamily: "JetBrainsMono Nerd Font"
         property string iconFontFamily: "Font Awesome 7 Free"
 
-        property string cpuVal: "0%"
-        property string memVal: "0%"
-        property string gpuVal: "0°C"
-        property string tempVal: "0°C"
         property string volumeVal: "0%"
 
         property double volFloat: 0.0 
         property bool showVolBar: false 
         property bool isMuted: false
 
-        property var lastTotal: 0
-        property var lastIdle: 0
-
         // Filtered list of actual application windows (not background processes)
         property var filteredApps: []
-        
-        // Track last focused instance index per app (for cycling)
         property var lastFocusedIndex: ({})
+        property var focusedApp: null
+        property string nowPlayingTitle: ""
+        property string nowPlayingArtist: ""
+        property string nowPlayingStatus: ""
 
         function updateFilteredApps() {
             var apps = []
@@ -141,44 +136,68 @@ Instantiator {
             filteredApps = result
         }
         
-        // Simple function to get icon - just use wayland appId directly
         function getIconSource(waylandAppId, appClass) {
+            var lowerAppId = waylandAppId ? waylandAppId.toLowerCase() : ""
             var lowerClass = appClass ? appClass.toLowerCase() : ""
-            
-            // Special case only for cursor
-            if (lowerClass === "cursor") {
+            if (lowerAppId.indexOf("cursor") !== -1 || lowerClass.indexOf("cursor") !== -1) {
                 var cursorIcon = Quickshell.iconPath("co.anysphere.cursor")
                 if (cursorIcon && cursorIcon !== "") {
                     return cursorIcon
                 }
             }
-            
-            // Use wayland appId if available (most reliable)
+            var keys = []
             if (waylandAppId && waylandAppId !== "") {
-                var iconPath = Quickshell.iconPath(waylandAppId)
+                keys.push(waylandAppId)
+            }
+            if (appClass && appClass !== "" && appClass !== waylandAppId) {
+                keys.push(appClass)
+            }
+            for (var i = 0; i < keys.length; i++) {
+                var iconPath = Quickshell.iconPath(keys[i])
                 if (iconPath && iconPath !== "") {
                     return iconPath
                 }
             }
-            
-            // Try app class name
-            if (appClass && appClass !== "") {
-                var classIcon = Quickshell.iconPath(appClass)
-                if (classIcon && classIcon !== "") {
-                    return classIcon
-                }
-            }
-            
-            // Return empty to trigger fallback text (first letter)
             return ""
         }
 
-        Component.onCompleted: updateFilteredApps()
+        function getFocusedApp() {
+            var toplevels = Hyprland.toplevels.values || Hyprland.toplevels || []
+            for (var i = 0; i < toplevels.length; i++) {
+                var t = toplevels[i]
+                if (!t.activated)
+                    continue
+                var waylandAppId = ""
+                var appClass = ""
+                if (t.wayland) {
+                    var w = t.wayland
+                    waylandAppId = w.appId || w.class || ""
+                    appClass = w.class || waylandAppId
+                }
+                var title = t.title || ""
+                return {
+                    title: title,
+                    waylandAppId: waylandAppId,
+                    appClass: appClass,
+                    address: t.address,
+                    workspace: t.workspace
+                }
+            }
+            return null
+        }
+
+        Component.onCompleted: {
+            updateFilteredApps()
+            focusedApp = getFocusedApp()
+        }
         
         // Update when toplevels change - try different approaches
         Connections {
             target: Hyprland
-            function onToplevelsChanged() { root.updateFilteredApps() }
+            function onToplevelsChanged() {
+                root.updateFilteredApps()
+                root.focusedApp = root.getFocusedApp()
+            }
         }
 
         anchors.top: true
@@ -201,16 +220,13 @@ Instantiator {
         }
 
         Timer {
-            interval: 2000
+            interval: 500
             running: true
             repeat: true
             triggeredOnStart: true
             onTriggered: {
-                cpuProc.running = true
-                memProc.running = true
-                tempProc.running = true
-                gpuProc.running = true
                 root.updateFilteredApps()
+                root.focusedApp = root.getFocusedApp()
             }
         }
 
@@ -240,332 +256,141 @@ Instantiator {
         }
 
         Process {
-            id: cpuProc
-            command: ["sh", "-c", "head -1 /proc/stat"]
-            
+            id: nowPlayingProc
+            command: ["playerctl", "metadata", "--format", "{{status}}|{{title}}|{{artist}}"]
             stdout: SplitParser {
                 onRead: data => {
-                    if (!data) return
-                    let lines = data.split("\n")
-                    if (lines.length < 1) return
-                    
-                    var parts = lines[0].split(/\s+/)
-                    var idle = parseInt(parts[4])
-                    var total = 0
-                    for (var i = 1; i < parts.length; i++) {
-                        var val = parseInt(parts[i])
-                        if (!isNaN(val)) total += val
-                    }
-                    
-                    var diffIdle = idle - root.lastIdle
-                    var diffTotal = total - root.lastTotal
-                    var usage = (diffTotal > 0) ? (100 * (diffTotal - diffIdle) / diffTotal).toFixed(0) : "0"
-                    
-                    root.cpuVal = usage + "%"
-                    root.lastIdle = idle
-                    root.lastTotal = total
+                    if (!data)
+                        return
+                    var parts = data.split("|")
+                    root.nowPlayingStatus = parts.length > 0 ? parts[0] : ""
+                    root.nowPlayingTitle = parts.length > 1 ? parts[1] : ""
+                    root.nowPlayingArtist = parts.length > 2 ? parts[2] : ""
                 }
             }
-
-            Component.onCompleted: running = true
         }
 
-        Process {
-            id: memProc
-            command: ["sh", "-c", "free | grep Mem"]
-            
-            stdout: SplitParser {
-                onRead: data => {
-                    if (!data ) return
-                    let parts = data.trim().split(/\s+/)
-                    let total = parseInt(parts[1])
-                    let used = parseInt(parts[2])
-                    
-                    if (total > 0) {
-                        root.memVal = Math.round(100 * used / total) + "%"
-                    } 
-                }
-            }
-
-            Component.onCompleted: running = true
+        Timer {
+            interval: 1000
+            running: true
+            repeat: true
+            triggeredOnStart: true
+            onTriggered: nowPlayingProc.running = true
         }
 
-        Process {
-            id: tempProc
-            command: ["sh", "-c", "sensors k10temp-pci-00c3 | grep Tctl"]
-            stdout: SplitParser {
-                onRead: data => {
-                    if (!data) return
-                    var match = data.match(/\+(\d+\.\d+)/)
-                    if (match) {
-                        root.tempVal = Math.round(parseFloat(match[1])) + "°C"
-                    }
-                }
-            }
-
-            Component.onCompleted: running = true
-        }
-
-        Process {
-            id: gpuProc
-            command: ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader"]
-            stdout: SplitParser {
-                onRead: data => {
-                    if (!data) return
-                    if (data.trim() !== "") {
-                        root.gpuVal = data.trim() + "°C"
-                    }
-                }
-            }
-
-            Component.onCompleted: running = true
-        }
+        // appsContainer removed for now; apps will be surfaced via center pill and future control center
 
         Rectangle {
-            id: leftContainer
+            id: workspaceContainer
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             anchors.left: parent.left
             anchors.margins: 4
-            
-            width: statsRow.implicitWidth + 20 
-            height: 25
-            radius: 15
-            color: colPill
-            clip: true 
-
-            Behavior on width { NumberAnimation { duration: 200 } }
-
-            RowLayout {
-                id: statsRow
-                anchors.centerIn: parent
-                spacing: 12
-
-                RowLayout {
-                    spacing: 4
-                    Text { text: ""; color: colWhite; font.family: fontFamily }
-                    Text { text: "CPU: " + root.cpuVal; color: colWhite; font.family: fontFamily; font.bold: true }
-                }
-                RowLayout {
-                    spacing: 4
-                    Text { text: ""; color: colWhite; font.family: fontFamily }
-                    Text { text: "RAM: " + root.memVal; color: colWhite; font.family: fontFamily; font.bold: true }
-                }
-                RowLayout {
-                    spacing: 4
-                    Text { text: "󰢮"; color: colWhite; font.family: fontFamily }
-                    Text { text: "GPU: " + root.gpuVal; color: colWhite; font.family: fontFamily; font.bold: true }
-                }
-                RowLayout {
-                    spacing: 4
-                    Text { text: ""; color: colWhite; font.family: fontFamily }
-                    Text { text: "Temp: " + root.tempVal; color: colWhite; font.family: fontFamily; font.bold: true }
-                }
-            }
-        }
-
-        Rectangle {
-            id: appsContainer
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            anchors.left: leftContainer.right
-            anchors.leftMargin: 8
-            anchors.margins: 4
-            
-            width: appsRow.implicitWidth + 20
-            height: 25
-            radius: 15
-            color: colPill
-            clip: true
-
-            Behavior on width { NumberAnimation { duration: 200 } }
-
-            RowLayout {
-                id: appsRow
-                anchors.centerIn: parent
-                spacing: 8
-
-                Repeater {
-                    id: appsRepeater
-                    model: root.filteredApps
-
-                    Rectangle {
-                        id: appPill
-                        height: 20
-                        width: 20
-                        radius: 10
-                        color: "transparent"
-
-                        property var appData: modelData
-                        property int instanceCount: appData ? appData.instances.length : 0
-                        property string iconSource: appData ? root.getIconSource(appData.waylandAppId, appData.class) : ""
-
-                        Image {
-                            id: appIcon
-                            anchors.centerIn: parent
-                            width: 20
-                            height: 20
-                            source: appPill.iconSource
-                            fillMode: Image.PreserveAspectFit
-                            opacity: 1.0  // Full opacity for icon
-                            smooth: true
-                            antialiasing: true
-                            asynchronous: false  // Load synchronously to catch errors faster
-                            
-                            // Fallback to text if icon not found or broken
-                            onStatusChanged: {
-                                if (status === Image.Error || status === Image.Null) {
-                                    fallbackText.visible = true
-                                    appIcon.visible = false
-                                } else if (status === Image.Ready) {
-                                    fallbackText.visible = false
-                                    appIcon.visible = true
-                                } else if (status === Image.Loading) {
-                                    fallbackText.visible = false
-                                    appIcon.visible = true
-                                }
-                            }
-                        }
-                        
-                        // Fallback text if icon not available
-                        Text {
-                            id: fallbackText
-                            anchors.centerIn: parent
-                            visible: !appIcon.visible || appIcon.status === Image.Error
-                            text: {
-                                if (!appData) return "?"
-                                var displayName = appData.class || "?"
-                                // Show first letter if single instance, or count if multiple
-                                if (instanceCount > 1) {
-                                    return instanceCount.toString()
-                                }
-                                return displayName.charAt(0).toUpperCase()
-                            }
-                            color: colWhite
-                            font.family: fontFamily
-                            font.pixelSize: 10
-                            font.bold: true
-                        }
-                        
-                        // Badge for multiple instances
-                        Rectangle {
-                            visible: instanceCount > 1
-                            anchors.right: parent.right
-                            anchors.top: parent.top
-                            anchors.margins: -2
-                            width: 8
-                            height: 8
-                            radius: 4
-                            color: colPill
-                            border.width: 1
-                            border.color: colWhite
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: {
-                                if (!appData || !appData.instances || appData.instances.length === 0) return
-                                
-                                var appClass = appData.class
-                                var instances = appData.instances
-                                
-                                // Get the last focused index for this app
-                                var currentIndex = root.lastFocusedIndex[appClass]
-                                
-                                if (currentIndex === undefined) {
-                                    // First click: find the currently active instance, or use first one
-                                    currentIndex = 0
-                                    for (var i = 0; i < instances.length; i++) {
-                                        if (instances[i].activated) {
-                                            currentIndex = i
-                                            break
-                                        }
-                                    }
-                                } else {
-                                    // Subsequent clicks: cycle to the next instance
-                                    currentIndex = (currentIndex + 1) % instances.length
-                                }
-                                
-                                // Update the last focused index
-                                root.lastFocusedIndex[appClass] = currentIndex
-                                
-                                // Get the instance to focus
-                                var instance = instances[currentIndex]
-                                
-                                // Focus the window and switch to its workspace
-                                if (instance.address) {
-                                    Hyprland.dispatch("focuswindow address:" + instance.address)
-                                }
-                                if (instance.workspace) {
-                                    instance.workspace.activate()
-                                }
-                            }
-                            cursorShape: Qt.PointingHandCursor
-                            hoverEnabled: true
-                        }
-                    }
-                }
-            }
-        }
-
-        Rectangle {
-            id: workspaceContainer
-            anchors.centerIn: parent
             width: workspaceRow.implicitWidth + 20
             height: 25
             radius: 15
-
             color: colPill
-
             Behavior on width {
                 NumberAnimation { duration: 200; easing.type: Easing.OutQuad }
             }
-
             RowLayout {
                 id: workspaceRow
                 anchors.centerIn: parent
-
                 Repeater {
                     model: 8
-
                     Rectangle {
                         id: workspaceBar
-
                         property var ws: Hyprland.workspaces.values.find(w => w.id === index + 1)
                         property bool isActive: Hyprland.focusedWorkspace?.id === (index + 1)
-
                         implicitWidth: isActive? 30 : 15
                         implicitHeight: 15
                         radius: 10
                         opacity: isActive ? 1 : 0.2
-
                         Layout.leftMargin: 1
                         Layout.rightMargin: 1
-
                         color: colWhite
                         z: isActive ? 100 : 0
-
-
+                        Text {
+                            anchors.centerIn: parent
+                            text: index + 1
+                            color: colBg
+                            font.family: fontFamily
+                            font.pixelSize: 10
+                            font.bold: true
+                        }
                         Behavior on implicitWidth { 
                             NumberAnimation { 
                                 duration: 200
                                 easing.type: Easing.OutQuad 
                             } 
                         }
-
                         Behavior on color { 
                             ColorAnimation { duration: 200 } 
                         }
-
                         MouseArea { 
                             anchors.fill: parent
                             onClicked: Hyprland.dispatch("workspace " + (index + 1))
                             cursorShape: Qt.PointingHandCursor
-
                             hoverEnabled: true
                         }
                     }
                 }
+            }
+        }
+
+        Rectangle {
+            id: centerAppContainer
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.horizontalCenter: parent.horizontalCenter
+            height: 20
+            radius: 0
+            color: "transparent"
+            visible: root.focusedApp !== null
+            width: centerRow.implicitWidth + 20
+            Behavior on width {
+                NumberAnimation { duration: 200; easing.type: Easing.OutQuad }
+            }
+            RowLayout {
+                id: centerRow
+                anchors.centerIn: parent
+                spacing: 6
+                Image {
+                    id: centerIcon
+                    width: 11
+                    height: 11
+                    Layout.preferredWidth: 25
+                    Layout.preferredHeight: 25
+                    sourceSize.width: 25
+                    sourceSize.height: 25
+                    visible: source !== ""
+                    source: root.focusedApp ? root.getIconSource(root.focusedApp.waylandAppId, root.focusedApp.appClass) : ""
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                }
+                Text {
+                    text: root.focusedApp ? root.focusedApp.title : ""
+                    color: colWhite
+                    font.family: fontFamily
+                    font.pixelSize: 11
+                    font.bold: true
+                    elide: Text.ElideRight
+                }
+            }
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    var app = root.focusedApp
+                    if (!app)
+                        return
+                    if (app.address) {
+                        Hyprland.dispatch("focuswindow address:" + app.address)
+                    }
+                    if (app.workspace) {
+                        app.workspace.activate()
+                    }
+                }
+                cursorShape: Qt.PointingHandCursor
+                hoverEnabled: true
             }
         }
 
@@ -590,6 +415,47 @@ Instantiator {
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 8
+
+                Rectangle {
+                    id: nowPlayingContainer
+                    height: 25
+                    radius: 15
+                    color: colPill
+                    visible: root.nowPlayingStatus === "Playing" && root.nowPlayingTitle !== ""
+                    property bool hovered: false
+                    implicitWidth: hovered ? Math.min(220, nowPlayingRow.implicitWidth + 20) : 40
+                    Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
+                    clip: true
+                    Behavior on implicitWidth {
+                        NumberAnimation { duration: 200; easing.type: Easing.OutQuad }
+                    }
+                    RowLayout {
+                        id: nowPlayingRow
+                        anchors.centerIn: parent
+                        spacing: 6
+                        Text {
+                            text: "󰎈"
+                            color: colWhite
+                            font.family: fontFamily
+                            font.pixelSize: 13
+                        }
+                        Text {
+                            visible: nowPlayingContainer.hovered
+                            text: root.nowPlayingTitle
+                            color: colWhite
+                            font.family: fontFamily
+                            font.pixelSize: 11
+                            elide: Text.ElideRight
+                        }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onEntered: nowPlayingContainer.hovered = true
+                        onExited: nowPlayingContainer.hovered = false
+                        cursorShape: Qt.PointingHandCursor
+                    }
+                }
 
                 Rectangle {
                     id: clockContainer
@@ -726,5 +592,7 @@ Instantiator {
                 }
             }
         }
+
+        // now playing popup overlay removed; handled inline in nowPlayingContainer
     }
 }
