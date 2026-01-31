@@ -1,4 +1,270 @@
 * {
-    font-family: JetBrainsMono Nerd Font;
-    font-size: 14px;
+  font-family: JetBrainsMono Nerd Font;
+  font-size: 13px;
+  font-weight: bold;
+}
+
+window#waybar {
+  background-color: rgba(30, 30, 46, 0.85);
+  color: #cdd6f4;
+  border: none;
+  border-radius: 0;
+}
+
+.modules-left,
+.modules-center,
+.modules-right {
+  padding: 0 6px;
+}
+
+/* Workspace Buttons */
+#workspaces {
+  padding: 0 4px;
+}
+
+#workspaces button {
+  background-color: rgba(49, 50, 68, 0.6);
+  color: #cdd6f4;
+  border: none;
+  border-radius: 12px;
+  padding: 0 14px;
+  margin: 4px 3px;
+  min-width: 35px;
+  font-weight: bold;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+#workspaces button:hover {
+  background-color: rgba(88, 91, 112, 0.8);
+}
+
+#workspaces button.active {
+  background-color: #fab387;
+  color: #1e1e2e;
+  box-shadow: 0 0 10px rgba(250, 179, 135, 0.4);
+}
+
+#workspaces button.urgent {
+  background-color: #f38ba8;
+  color: #1e1e2e;
+}
+
+/* Window Module */
+#window {
+  background-color: transparent;
+  color: #cdd6f4;
+  padding: 0 14px;
+  margin: 4px;
+  border-radius: 12px;
+  font-weight: bold;
+  font-size: 13px;
+}
+
+#window image {
+  margin-right: 8px;
+}
+
+/* MPRIS Module */
+#mpris {
+  background-color: rgba(49, 50, 68, 0.6);
+  color: #cdd6f4;
+  border: none;
+  border-radius: 12px;
+  padding: 0 14px;
+  margin: 4px;
+  min-width: 30px;
+  font-weight: bold;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+#mpris:hover {
+  background-color: rgba(88, 91, 112, 0.8);
+}
+
+#mpris.paused {
+  color: #a6adc8;
+}
+
+/* Pulseaudio Module */
+#pulseaudio {
+  background-color: rgba(49, 50, 68, 0.6);
+  color: #cdd6f4;
+  border: none;
+  border-radius: 12px;
+  padding: 0 14px;
+  margin: 4px;
+  min-width: 30px;
+  font-weight: bold;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+#pulseaudio:hover {
+  background-color: rgba(88, 91, 112, 0.8);
+}
+
+#pulseaudio.muted {
+  color: #f38ba8;
+}
+
+/* Clock Module */
+#clock {
+  background-color: rgba(49, 50, 68, 0.6);
+  color: #cdd6f4;
+  border: none;
+  border-radius: 12px;
+  padding: 0 14px;
+  margin: 4px;
+  min-width: 30px;
+  font-weight: bold;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+#clock:hover {
+  background-color: rgba(88, 91, 112, 0.8);
+}
+
+/* Tray Module */
+#tray {
+  background-color: rgba(49, 50, 68, 0.6);
+  padding: 0 12px;
+  margin: 4px 0;
+}
+
+#tray > * {
+  background-color: transparent;
+  border-radius: 12px;
+  padding: 4px 10px;
+  margin: 0 2px;
+  min-width: 28px;
+  min-height: 28px;
+  transition: all 0.2s ease;
+}
+
+#tray > *:hover {
+  background-color: rgba(88, 91, 112, 0.8);
+}
+
+/* Tray icon images - ensure proper sizing */
+#tray > * > image {
+  min-width: 18px;
+  min-height: 18px;
+  margin: 0;
+  padding: 0;
+}
+
+/* Power Module */
+#custom-power {
+  background-color: rgba(49, 50, 68, 0.6);
+  color: #cdd6f4;
+  border: none;
+  border-radius: 12px;
+  padding: 0 14px;
+  margin: 4px;
+  min-width: 30px;
+  font-weight: bold;
+  font-size: 16px;
+  transition: all 0.2s ease;
+}
+
+#custom-power:hover {
+  background-color: rgba(88, 91, 112, 0.8);
+  color: #fab387;
+}
+
+/* Tooltip */
+tooltip {
+  background-color: rgba(30, 30, 46, 0.95);
+  color: #cdd6f4;
+  border: 1px solid #fab387;
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 12px;
+}
+
+tooltip label {
+  color: #cdd6f4;
+}
+
+/* Network Module (if used separately) */
+#network {
+  background-color: rgba(49, 50, 68, 0.6);
+  color: #cdd6f4;
+  border: none;
+  border-radius: 12px;
+  padding: 0 14px;
+  margin: 4px;
+  min-width: 30px;
+  font-weight: bold;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+#network:hover {
+  background-color: rgba(88, 91, 112, 0.8);
+}
+
+#network.disconnected {
+  color: #f38ba8;
+}
+
+/* Bluetooth Module (if used separately) */
+#bluetooth {
+  background-color: rgba(49, 50, 68, 0.6);
+  color: #cdd6f4;
+  border: none;
+  border-radius: 12px;
+  padding: 0 14px;
+  margin: 4px;
+  min-width: 30px;
+  font-weight: bold;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+#bluetooth:hover {
+  background-color: rgba(88, 91, 112, 0.8);
+}
+
+#bluetooth.disabled {
+  color: #a6adc8;
+}
+
+/* Power Profiles Daemon */
+#power-profiles-daemon {
+  background-color: rgba(49, 50, 68, 0.6);
+  color: #cdd6f4;
+  border: none;
+  border-radius: 12px;
+  padding: 0 14px;
+  margin: 4px;
+  min-width: 30px;
+  font-weight: bold;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+#power-profiles-daemon:hover {
+  background-color: rgba(88, 91, 112, 0.8);
+}
+
+/* General module styling for consistency */
+.module {
+  padding: 0 14px;
+  margin: 4px;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+/* Smooth transitions for all interactive elements */
+button,
+#pulseaudio,
+#clock,
+#tray > *,
+#custom-power,
+#mpris {
+  transition: background-color 0.2s ease, color 0.2s ease;
 }

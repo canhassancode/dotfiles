@@ -15,6 +15,7 @@ Instantiator {
         id: root
 
         screen: modelData
+            exclusionMode: Quickshell.ExclusionMode.None
 
         property color colBg: '#510c114a'
         property color colCyan: "#0db9d7"
@@ -39,6 +40,7 @@ Instantiator {
         property string nowPlayingTitle: ""
         property string nowPlayingArtist: ""
         property string nowPlayingStatus: ""
+            property bool showControlCenter: false
 
         function updateFilteredApps() {
             var apps = []
@@ -203,8 +205,12 @@ Instantiator {
         anchors.top: true
         anchors.left: true
         anchors.right: true
-        implicitHeight: 35
+        implicitHeight: showControlCenter ? 120 : 35
         color: colBg
+
+        Behavior on implicitHeight {
+            NumberAnimation { duration: 200; easing.type: Easing.OutQuad }
+        }
 
         Timer {
             id: volHideTimer
@@ -266,9 +272,9 @@ Instantiator {
                     root.nowPlayingStatus = parts.length > 0 ? parts[0] : ""
                     root.nowPlayingTitle = parts.length > 1 ? parts[1] : ""
                     root.nowPlayingArtist = parts.length > 2 ? parts[2] : ""
+                    } 
                 }
             }
-        }
 
         Timer {
             interval: 1000
@@ -584,10 +590,104 @@ Instantiator {
 
                     MouseArea {
                         anchors.fill: parent
-                        // onClicked: Power.shutdown() TODO: Add power menu
+                        onClicked: root.showControlCenter = !root.showControlCenter
                         cursorShape: Qt.PointingHandCursor
 
                         hoverEnabled: true
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            id: controlCenterPanel
+            visible: root.showControlCenter
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.topMargin: 35
+            height: 80
+            color: colBg
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: 10
+                spacing: 16
+
+                ColumnLayout {
+                    Layout.alignment: Qt.AlignVCenter | Qt.AlignLeft
+                    spacing: 4
+                    Text {
+                        text: "Now Playing"
+                        color: colText
+                        font.family: fontFamily
+                        font.pixelSize: 10
+                        font.bold: true
+                    }
+                    Text {
+                        text: root.nowPlayingTitle
+                        color: colWhite
+                        font.family: fontFamily
+                        font.pixelSize: 11
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        text: root.nowPlayingArtist
+                        color: colText
+                        font.family: fontFamily
+                        font.pixelSize: 10
+                        elide: Text.ElideRight
+                    }
+                }
+
+                ColumnLayout {
+                    spacing: 4
+                    Text {
+                        text: "Volume"
+                        color: colText
+                        font.family: fontFamily
+                        font.pixelSize: 10
+                        font.bold: true
+                    }
+                    Rectangle {
+                        width: 140
+                        height: 8
+                        radius: 4
+                        color: "#44000000"
+                        Rectangle {
+                            anchors.left: parent.left
+                            height: parent.height
+                            radius: parent.radius
+                            width: parent.width * root.volFloat
+                            color: colWhite
+                        }
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
+                    spacing: 4
+                    Text {
+                        text: "Power"
+                        color: colText
+                        font.family: fontFamily
+                        font.pixelSize: 10
+                        font.bold: true
+                    }
+                    RowLayout {
+                        spacing: 8
+                        Text {
+                            text: ""
+                            color: colWhite
+                            font.family: fontFamily
+                            font.pixelSize: 13
+                        }
+                        Text {
+                            text: ""
+                            color: colWhite
+                            font.family: fontFamily
+                            font.pixelSize: 13
+                        }
                     }
                 }
             }
