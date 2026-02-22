@@ -1,0 +1,10 @@
+[opener]
+vlc_player = [
+	{ run = 'vlc "$@"', orphan = true, desc = "VLC" }
+]
+
+[open]
+prepend_rules = [
+	{ name = "*.mp4", use = [ "vlc_player", "reveal" ] },
+	{ name = "*.mkv", use = [ "vlc_player", "reveal" ] }
+]
