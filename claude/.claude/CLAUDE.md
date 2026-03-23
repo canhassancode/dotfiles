@@ -1,0 +1,3 @@
+- I always use tailwind where possible. i don't like style tags or script tags
+- I don't like "any" types, please refer to any existing type that can be used, or create a type if necessary in a centralised location, I typically have a "core" folder in my repos
+- Please before doing any searches, check the current month and year
