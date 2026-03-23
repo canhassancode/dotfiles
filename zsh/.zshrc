@@ -8,7 +8,6 @@ plugins=(git
 ###############
 ##--ALIASES--##
 ###############
-alias 'dev'='pnpm run dev'
 if [ -f ~/.zsh_aliases ]; then
     source ~/.zsh_aliases
 fi 
@@ -18,6 +17,13 @@ fi
 #################
 if [ -f ~/.zsh_functions ]; then
     source ~/.zsh_functions
+fi
+
+##############
+#--EXPORTS--##
+##############
+if [ -f ~/.zsh_exports ]; then
+    source ~/.zsh_exports
 fi
 
 #######################
