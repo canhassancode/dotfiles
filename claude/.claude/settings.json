@@ -1,12 +1,6 @@
 {
   "permissions": {
-    "allow": [
-      "Read(*)",
-      "Glob(*)",
-      "Grep(*)",
-      "Bash(ls *)",
-      "Bash(cd *)"
-    ]
+    "allow": ["Read(*)", "Glob(*)", "Grep(*)", "Bash(ls *)", "Bash(cd *)", "Bash(gh pr *)"]
   },
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": true
