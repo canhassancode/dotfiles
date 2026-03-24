@@ -1,8 +1,82 @@
 {
   "permissions": {
-    "allow": ["Read(*)", "Glob(*)", "Grep(*)", "Bash(ls *)", "Bash(cd *)", "Bash(gh pr *)"]
+    "allow": [
+      "Read(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "Bash(ls *)",
+      "Bash(cd *)",
+      "Bash(cat *)",
+      "Bash(git log *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git branch *)",
+      "Bash(git show *)",
+      "Bash(git stash *)",
+      "Bash(gh pr *)",
+      "Bash(gh issue *)",
+      "Bash(gh run *)",
+      "Bash(pnpm run *)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm lint *)",
+      "Bash(pnpm type-check *)",
+      "Bash(pnpm install *)",
+      "Bash(pnpm exec *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(npm run *)",
+      "Bash(npm test *)",
+      "Bash(docker compose *)",
+      "Bash(docker ps *)",
+      "Bash(go run *)",
+      "Bash(go test *)",
+      "Bash(go build *)",
+      "Bash(which *)",
+      "Bash(echo *)",
+      "Bash(pwd)",
+      "Bash(date *)",
+      "Bash(wc *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(sort *)",
+      "Bash(uniq *)",
+      "Bash(jq *)",
+      "Bash(curl *)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(git push --force *)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean -f *)"
+    ]
   },
-  "enabledPlugins": {
-    "typescript-lsp@claude-plugins-official": true
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'display notification \"Claude needs your attention\" with title \"Claude Code\" sound name \"Glass\"'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/protect-files.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {},
+  "statusLine": {
+    "type": "command",
+    "command": "bash $HOME/.claude/statusline-command.sh"
   }
 }
