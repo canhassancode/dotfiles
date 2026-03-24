@@ -41,14 +41,13 @@
       "Bash(sort *)",
       "Bash(uniq *)",
       "Bash(jq *)",
-      "Bash(curl *)"
+      "Bash(curl *)",
+      "Fetch(https://*)",
+      "WebSearch(*)",
+      "WebFetch(*)",
+      "Search(*)"
     ],
-    "deny": [
-      "Bash(rm -rf *)",
-      "Bash(git push --force *)",
-      "Bash(git reset --hard *)",
-      "Bash(git clean -f *)"
-    ]
+    "deny": ["Bash(rm -rf *)", "Bash(git push --force *)", "Bash(git reset --hard *)", "Bash(git clean -f *)"]
   },
   "hooks": {
     "Notification": [
