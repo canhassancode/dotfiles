@@ -42,6 +42,7 @@
       "Bash(uniq *)",
       "Bash(jq *)",
       "Bash(curl *)",
+      "Bash(grep *)",
       "Fetch(https://*)",
       "WebSearch(*)",
       "WebFetch(*)",

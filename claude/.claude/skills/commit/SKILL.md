@@ -1,7 +1,6 @@
 ---
 name: commit
-description: Create a git commit with conventional commit message format. Use when the user asks to commit, save changes, or create a commit.
-disable-model-invocation: true
+description: Create a git commit with conventional commit message format. TRIGGER when the user asks to commit, stage changes, "get changes in", save work, or any request that involves creating a git commit without pushing or opening a PR.
 argument-hint: [optional message override]
 ---
 
@@ -17,14 +16,14 @@ Create a commit following the project's conventional commit format.
 
 ## Prefixes
 
-| Prefix | Use case |
-|---|---|
-| `feat` | New feature or capability |
-| `fix` | Bug fix |
-| `hotfix` | Urgent production fix |
+| Prefix     | Use case                                  |
+| ---------- | ----------------------------------------- |
+| `feat`     | New feature or capability                 |
+| `fix`      | Bug fix                                   |
+| `hotfix`   | Urgent production fix                     |
 | `refactor` | Code restructure with no behaviour change |
-| `chore` | Dependencies, config, tooling, CI |
-| `docs` | Documentation only |
+| `chore`    | Dependencies, config, tooling, CI         |
+| `docs`     | Documentation only                        |
 
 ## Rules
 
@@ -38,10 +37,12 @@ Create a commit following the project's conventional commit format.
 
 ## Process
 
-1. Run `git status` and `git diff` to understand what changed
-2. Run `git log --oneline -5` to check recent commit style
-3. Determine the appropriate prefix based on the nature of the changes
-4. Draft the commit message
-5. Stage the relevant files by name
-6. Create the commit
-7. Run `git status` to verify success
+1. Look at package.json for any type checking, lint checking and prettier checking.
+2. Run the associated commands to check and fix them.
+3. Run `git status` and `git diff` to understand what changed
+4. Run `git log --oneline -5` to check recent commit style
+5. Determine the appropriate prefix based on the nature of the changes
+6. Draft the commit message
+7. Stage the relevant files by name
+8. Create the commit
+9. Run `git status` to verify success

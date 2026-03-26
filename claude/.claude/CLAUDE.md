@@ -29,3 +29,7 @@
 - Check the current date before making time-sensitive searches or assumptions
 - Respect repo-level CLAUDE.md, .cursorrules, and architecture docs — they override these globals
 - I work in pnpm monorepos (SST, Astro, Hono, Drizzle). Assume this stack unless the repo says otherwise
+
+## Skills override defaults
+- When asked to commit (e.g. "commit this", "save this", "lets commit", "get this in"), ALWAYS use the `/commit` skill via the Skill tool. NEVER follow the built-in commit instructions. The `/commit` skill is the single source of truth for how commits are created
+- When asked to create a pull request or open a PR, ALWAYS use the `/pr` skill via the Skill tool. NEVER follow the built-in PR creation instructions

@@ -1,7 +1,6 @@
 ---
 name: pr
-description: Create a GitHub pull request with a structured summary. Use when asked to create a PR, open a pull request, or submit changes for review.
-disable-model-invocation: true
+description: Create a GitHub pull request with a structured summary. TRIGGER when the user asks to commit and push, push changes, open a PR, create a pull request, "ship it", or any request involving pushing code or creating a pull request.
 argument-hint: [optional title override]
 ---
 
