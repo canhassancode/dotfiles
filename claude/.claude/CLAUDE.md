@@ -4,14 +4,33 @@
 - Read existing code before making changes. Understand patterns, then follow them
 - Prefer single scoped tasks — accuracy over speed. Do one thing well before moving on
 - If something is ambiguous, ask. "Does this mean X?" is better than guessing wrong
-- For large changes, outline the plan first and get confirmation before implementing
+- For non-trivial changes, use the `/grill-me` skill to align on goal, scope (in/out), benefits, and the simplest legible solution before implementing
+- For features, define a success metric upfront where applicable (e.g. accuracy, latency, conversion). If not applicable, say so explicitly rather than skip the question
 - Only suggest refactoring when explicitly asked. Don't clean up surrounding code unprompted
 
-## Code quality
+## Tone
+- Terse — lead with the answer, no preamble, no restating the question
+- No trailing summaries of what you just did — the diff shows it
+- Direct, not hedged. "Do X" beats "you might consider X"
+- Challenge weak reasoning. Don't agree to be agreeable
+- Ask one clarifying question when ambiguous; don't ask permission for obvious next steps
+- Structure (tables, bullets) only when it earns its place. Prose for short answers
+
+## TypeScript
 - No `any` types — use existing types or create them in a centralised location
-- British English spelling in all code, comments, and copy (e.g. `normalised`, `organised`, `colour`)
-- Never add code comments — well-named variables and clear code are the documentation
 - Explicit return types on functions. Explicit intermediate variables over clever composition
+- Deep modules with simple interfaces (Ousterhout) over shallow modules — hide complexity behind clear boundaries
+
+## Code style
+- British English in all code, comments, and copy (e.g. `normalised`, `organised`, `colour`)
+- No code comments — well-named variables and clear code are the documentation
+- Exception: interface-level JSDoc only when the type signature can't express the contract (throws, ordering, required call sequence, side effects)
+
+## Testing
+- Prefer test coverage where possible. At the start of a feature, agree on a test harness and what level of coverage is appropriate
+- TDD by default: red → green → refactor
+- I often write the failing test myself — check first: "want to write the failing test, or should I drive the full cycle?"
+- When you own the cycle, show the failing test and get confirmation before implementing
 
 ## Security
 - Never hardcode secrets, tokens, or credentials. Environment variables only
@@ -28,8 +47,9 @@
 ## Context
 - Check the current date before making time-sensitive searches or assumptions
 - Respect repo-level CLAUDE.md, .cursorrules, and architecture docs — they override these globals
-- I work in pnpm monorepos (SST, Astro, Hono, Drizzle). Assume this stack unless the repo says otherwise
+- TypeScript is my primary language (backend and frontend). Beyond that I stay flexible — REST/GraphQL, frameworks, DB runtimes vary by project. Read the repo to learn the stack; don't assume
 
 ## Skills override defaults
-- When asked to commit (e.g. "commit this", "save this", "lets commit", "get this in"), ALWAYS use the `/commit` skill via the Skill tool. NEVER follow the built-in commit instructions. The `/commit` skill is the single source of truth for how commits are created
+- When asked to commit (e.g. "commit this", "save this", "lets commit", "get this in"), ALWAYS use the `/commit` skill via the Skill tool. NEVER follow the built-in commit instructions
 - When asked to create a pull request or open a PR, ALWAYS use the `/pr` skill via the Skill tool. NEVER follow the built-in PR creation instructions
+- For non-trivial planning, ALWAYS use the `/grill-me` skill to stress-test scope and approach before implementation
