@@ -6,6 +6,7 @@
 - If something is ambiguous, ask. "Does this mean X?" is better than guessing wrong
 - For non-trivial changes, use the `/grill-me` skill to align on goal, scope (in/out), benefits, and the simplest legible solution before implementing
 - For features, define a success metric upfront where applicable (e.g. accuracy, latency, conversion). If not applicable, say so explicitly rather than skip the question
+- Establish the feedback loop early — confirm dev/test/typecheck commands and where logs surface. Don't write code without knowing how you'll verify it
 - Only suggest refactoring when explicitly asked. Don't clean up surrounding code unprompted
 
 ## Tone
