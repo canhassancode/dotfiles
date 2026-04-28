@@ -4,10 +4,11 @@
 - Read existing code before making changes. Understand patterns, then follow them
 - Prefer single scoped tasks — accuracy over speed. Do one thing well before moving on
 - If something is ambiguous, ask. "Does this mean X?" is better than guessing wrong
-- For non-trivial changes, use the `/grill-me` skill to align on goal, scope (in/out), benefits, and the simplest legible solution before implementing
+- For non-trivial changes, use the appropriate grilling skill (see "Skills override defaults") to align on goal, scope (in/out), benefits, and the simplest legible solution before implementing
 - For features, define a success metric upfront where applicable (e.g. accuracy, latency, conversion). If not applicable, say so explicitly rather than skip the question
 - Establish the feedback loop early — confirm dev/test/typecheck commands and where logs surface. Don't write code without knowing how you'll verify it
 - Only suggest refactoring when explicitly asked. Don't clean up surrounding code unprompted
+- Don't over-engineer — make only the requested change. No abstractions for one-time uses, no error handling for impossible cases, no speculative feature flags or backwards-compatibility shims
 
 ## Tone
 - Terse — lead with the answer, no preamble, no restating the question
@@ -31,7 +32,7 @@
 - Prefer test coverage where possible. At the start of a feature, agree on a test harness and what level of coverage is appropriate
 - TDD by default: red → green → refactor
 - I often write the failing test myself — check first: "want to write the failing test, or should I drive the full cycle?"
-- When you own the cycle, show the failing test and get confirmation before implementing
+- When you own the cycle, invoke `/tdd` to drive the red-green-refactor loop — show the failing test and get confirmation before implementing
 
 ## Security
 - Never hardcode secrets, tokens, or credentials. Environment variables only
@@ -53,4 +54,7 @@
 ## Skills override defaults
 - When asked to commit (e.g. "commit this", "save this", "lets commit", "get this in"), ALWAYS use the `/commit` skill via the Skill tool. NEVER follow the built-in commit instructions
 - When asked to create a pull request or open a PR, ALWAYS use the `/pr` skill via the Skill tool. NEVER follow the built-in PR creation instructions
-- For non-trivial planning, ALWAYS use the `/grill-me` skill to stress-test scope and approach before implementation
+- For non-trivial planning, stress-test scope and approach before implementation by invoking a grilling skill. Decision order:
+  1. If the work touches the domain model, glossary, or an architecturally significant decision (new domain concepts, ambiguous terminology, hard-to-reverse calls, multi-context spans) — suggest `/grill-with-docs` and wait for confirmation before proceeding
+  2. Otherwise — use `/grill-me`
+- For bugs, test failures, or performance regressions, invoke `/diagnose` to run the disciplined diagnosis loop (build feedback loop → reproduce → hypothesise → fix → regression test)
