@@ -58,24 +58,44 @@ Publish issues in dependency order (blockers first) so you can reference real is
 <issue-template>
 ## Parent
 
-A reference to the parent issue on the issue tracker (if the source was an existing issue, otherwise omit this section).
-
-## What to build
-
-A concise description of this vertical slice. Describe the end-to-end behavior, not layer-by-layer implementation.
-
-## Acceptance criteria
-
-- [ ] Criterion 1
-- [ ] Criterion 2
-- [ ] Criterion 3
+`#<issue-number>` reference to the parent issue (omit this section if there is no parent). Always use `#<number>` form so the parent reference is greppable.
 
 ## Blocked by
 
-- A reference to the blocking ticket (if any)
+`#<issue-number>` references to blocking tickets, one per line (omit this section if there are no blockers).
 
-Or "None - can start immediately" if no blockers.
+## Agent Brief
+
+**Category:** bug / enhancement
+**Summary:** one-line description of what needs to happen
+
+**Current behavior:**
+Describe what happens now. For bugs, this is the broken behaviour. For enhancements, this is the status quo the feature builds on.
+
+**Desired behavior:**
+Describe what should happen after the agent's work is complete. Be specific about edge cases and error conditions.
+
+**Key interfaces:**
+
+- `TypeName` — what needs to change and why
+- `functionName()` return type — what it currently returns vs what it should return
+- Config shape — any new configuration options needed
+
+Describe interfaces, types, and behavioural contracts. Do NOT reference file paths or line numbers — they go stale.
+
+**Acceptance criteria:**
+
+- [ ] Specific, testable criterion 1
+- [ ] Specific, testable criterion 2
+- [ ] Specific, testable criterion 3
+
+**Out of scope:**
+
+- Things that should NOT be changed in this issue
+- Adjacent features that might seem related but are separate
 
 </issue-template>
+
+Follow the principles in `~/.claude/skills/triage/AGENT-BRIEF.md`: durability over precision (no file paths or line numbers), behavioural not procedural (describe what, not how), explicit scope boundaries.
 
 Do NOT close or modify any parent issue.
