@@ -20,7 +20,7 @@ Stow is idempotent: re-run after a pull to pick up new files.
 |---|---|---|---|
 | [`claude`](claude/) | `~/.claude/` | Claude Code | Global skills, agents, hooks, CLAUDE.md |
 | [`ralph`](ralph/) | `~/.local/bin/ralph`, `~/.config/ralph/` | `sbx`, `gh` | AFK Claude loop |
-| `zsh` | `~/.zshrc`, `~/.zprofile` | `oh-my-zsh` | Adds `~/.local/bin` to `$PATH` |
+| [`zsh`](zsh/) | `~/.zshrc` | `oh-my-zsh`, `starship`, `fastfetch` | Adds `~/.local/bin` to `$PATH` |
 | `git` | `~/.gitconfig` | — | |
 | `nvim` | `~/.config/nvim/` | `nvim` ≥ 0.10 | |
 | `tmux` | `~/.tmux.conf` | `tmux` | |
