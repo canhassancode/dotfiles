@@ -1,37 +1,40 @@
-# 🚀 dotfiles
+# dotfiles
 
-## 📚 Overview
+GNU Stow-managed configuration. Each top-level directory is an independent stowable package.
 
-- Installs brew, git, necessary apps.
-- Creates sensible defaults.
-- Uses [GNU Stow](https://medium.com/quick-programming/managing-dotfiles-with-gnu-stow-9b04c155ebad) to throw necessary default configs in the correct location.
+## Prerequisites
 
-## 💻 How to install dotfiles
+`stow`, `git`, `gh`. Optional per package: `sbx` (for [ralph](ralph/)), `oh-my-zsh` (for `zsh`).
 
-The setup for this should be fairly simple as the scripts automate a lot of the process:
+## Installation
 
-```shell
-# Step 1: 🚀 Install GNU Stow
-# Step 2: Run the following
-stow -t ~ hyprland git etc.
+```sh
+cd ~/dotfiles && stow <package>
 ```
 
-## To install various components
+Stow is idempotent: re-run after a pull to pick up new files.
 
-### Brew install modules
+## Packages
 
-```shell
-brew install starship fastfetch
-```
+| Package | Stows to | Depends on | Notes |
+|---|---|---|---|
+| [`claude`](claude/) | `~/.claude/` | Claude Code | Global skills, agents, hooks, CLAUDE.md |
+| [`ralph`](ralph/) | `~/.local/bin/ralph`, `~/.config/ralph/` | `sbx`, `gh` | AFK Claude loop |
+| `zsh` | `~/.zshrc`, `~/.zprofile` | `oh-my-zsh` | Adds `~/.local/bin` to `$PATH` |
+| `git` | `~/.gitconfig` | — | |
+| `nvim` | `~/.config/nvim/` | `nvim` ≥ 0.10 | |
+| `tmux` | `~/.tmux.conf` | `tmux` | |
+| `kitty`, `ghostty` | `~/.config/<term>/` | terminal of choice | |
+| `starship` | `~/.config/starship.toml` | `starship` | |
+| `hyprland`, `quickshell`, `waybar` | `~/.config/<tool>/` | Linux only | |
+| `yazi` | `~/.config/yazi/` | `yazi` | |
 
-### Autosuggestions
+## Bootstrap on a new machine
 
-```shell
-git clone --depth 1 https://github.com/zsh-users/zsh-autosuggestions "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}"/plugins/zsh-autosuggestions
-```
-
-### Syntax Highlighting
-
-```shell
-git clone --depth 1 https://github.com/zsh-users/zsh-syntax-highlighting "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}"/plugins/zsh-syntax-highlighting
+```sh
+brew install stow gh                          # macOS; pacman/apt equivalents on Linux
+git clone <this-repo> ~/dotfiles
+cd ~/dotfiles
+stow zsh git tmux                             # baseline shell
+stow claude ralph                             # Claude tooling
 ```
