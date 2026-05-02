@@ -15,10 +15,14 @@ Infer the repo from `git remote -v` — `gh` does this automatically when run in
 
 ## Pre-flight on first use in a repo
 
-Before creating, editing, or labelling any issue in a repo for the first time in a session, ensure the canonical triage labels exist. This is idempotent — only missing labels are created.
+Before creating, editing, or labelling any issue in a repo for the first time in a session, ensure the canonical triage labels exist. This is idempotent — the sentinel check at the top exits fast if bootstrap has already run in this repo, so the cost on subsequent invocations is a single API call.
 
 ```bash
-existing=$(gh label list --json name --jq '.[].name')
+# Sentinel: if any canonical label exists, bootstrap has already run.
+if gh label view needs-triage >/dev/null 2>&1; then
+  return 0 2>/dev/null || exit 0
+fi
+
 declare -A canonical=(
   [bug]="d73a4a:Something is broken"
   [enhancement]="a2eeef:New feature or improvement"
@@ -30,7 +34,7 @@ declare -A canonical=(
 )
 for label in "${!canonical[@]}"; do
   IFS=':' read -r colour desc <<< "${canonical[$label]}"
-  echo "$existing" | grep -qx "$label" || gh label create "$label" --color "$colour" --description "$desc"
+  gh label create "$label" --color "$colour" --description "$desc" 2>/dev/null || true
 done
 ```
 
