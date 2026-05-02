@@ -25,9 +25,11 @@ Body template:
 
 ```markdown
 ## Summary
+
 - Bullet points describing the key changes
 
 ## Test plan
+
 - [ ] How to verify the changes work
 ```
 
