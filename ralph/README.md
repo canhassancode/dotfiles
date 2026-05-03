@@ -20,7 +20,47 @@ cd ~/dotfiles && stow ralph
 - `sbx` — Docker sandbox CLI (`brew install sbx`)
 - `gh` — authenticated for the current repo
 - `claude` — available inside the sandbox
+- Dotfiles repo cloned at `$HOME/dotfiles` (ralph mounts it read-only into the sandbox)
 - The repo must have triage labels (`/to-prd`, `/to-issues`, `/triage` create them on first use)
+
+## Sandbox bootstrap
+
+The first time ralph runs in a repo, it creates a sandbox named `<repo>-ralph` with two read-only mounts:
+
+| Host path        | Why                                                                    |
+| ---------------- | ---------------------------------------------------------------------- |
+| `$HOME/.claude`  | Resolves stow-managed symlinks like `~/.claude/CLAUDE.md` on the host. |
+| `$HOME/dotfiles` | Provides the actual stow source the above symlinks resolve into.       |
+
+It then symlinks the canonical config into the agent's `$HOME` inside the sandbox:
+
+```
+$HOME/.claude/CLAUDE.md → $HOME/dotfiles/claude/.claude/CLAUDE.md
+$HOME/.claude/skills    → $HOME/dotfiles/claude/.claude/skills
+```
+
+This is the smallest change that lets Claude inside the sandbox load your global `CLAUDE.md` and personal skills (`/commit`, `/pr`, `/tdd`, etc.) without giving the agent write access to your host config. Settings, sessions, and credentials stay in the agent's own writable `~/.claude/` — they aren't touched.
+
+Skill edits on the host are visible to the next iteration immediately; nothing is baked into a container image.
+
+### Smoke test
+
+After ralph creates the sandbox, verify the integration:
+
+```sh
+sbx exec <repo>-ralph -- ls $HOME/.claude/skills
+```
+
+You should see your personal skills (`commit`, `pr`, `tdd`, `triage`, …). If the listing is empty or errors, the symlink target isn't reachable — check the mount with `sbx exec <repo>-ralph -- mount | grep claude`.
+
+### Recreating the sandbox
+
+Mounts are fixed at create time. To change them, remove and let ralph recreate:
+
+```sh
+sbx rm <repo>-ralph
+ralph
+```
 
 ## Usage
 

@@ -33,9 +33,9 @@ done
 
 if [[ -z "$MAX_ITERATIONS" ]]; then
   if [[ -n "$ISSUE" ]]; then
-    MAX_ITERATIONS=10
+    MAX_ITERATIONS=3
   else
-    MAX_ITERATIONS=30
+    MAX_ITERATIONS=5
   fi
 fi
 
@@ -65,8 +65,27 @@ if ! gh repo view >/dev/null 2>&1; then
   exit 1
 fi
 
+if [[ ! -d "$HOME/dotfiles/claude/.claude" ]]; then
+  echo "ralph: $HOME/dotfiles/claude/.claude not found (ralph expects the dotfiles repo at \$HOME/dotfiles)" >&2
+  exit 1
+fi
+
 SANDBOX_NAME="$(basename "$PWD")-ralph"
 PROMPT="$(cat "$PROMPT_FILE")"
+
+# sbx mounts land at literal host paths and the agent runs as $HOME=/home/agent,
+# so Claude can't see the host's ~/.claude/ without surgical symlinks. Mount the
+# dotfiles repo read-only and symlink the canonical CLAUDE.md + skills into the
+# agent's $HOME on first create.
+if ! sbx ls -q | grep -qx "$SANDBOX_NAME"; then
+  echo "ralph: bootstrapping sandbox $SANDBOX_NAME"
+  sbx create --name "$SANDBOX_NAME" claude . "$HOME/.claude:ro" "$HOME/dotfiles:ro"
+  sbx exec "$SANDBOX_NAME" -- bash -c "
+    mkdir -p \$HOME/.claude
+    ln -sfn $HOME/dotfiles/claude/.claude/CLAUDE.md \$HOME/.claude/CLAUDE.md
+    ln -sfn $HOME/dotfiles/claude/.claude/skills    \$HOME/.claude/skills
+  "
+fi
 
 if [[ -n "$ISSUE" ]]; then
   PROMPT="$PROMPT
@@ -81,7 +100,7 @@ echo "ralph: sandbox=$SANDBOX_NAME mode=$([[ -n $ISSUE ]] && echo "single(#$ISSU
 for ((i=1; i<=MAX_ITERATIONS; i++)); do
   echo
   echo "=== ralph iteration $i / $MAX_ITERATIONS ==="
-  if RESULT=$(sbx run "$SANDBOX_NAME" claude -p "$PROMPT" 2>&1 | tee /dev/tty); then
+  if RESULT=$(sbx run "$SANDBOX_NAME" -- -p "$PROMPT" 2>&1 | tee /dev/tty); then
     if [[ "$RESULT" == *"<promise>COMPLETE</promise>"* ]]; then
       echo
       echo "ralph: pool drained, exiting."
