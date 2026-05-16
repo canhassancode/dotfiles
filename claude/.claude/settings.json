@@ -50,7 +50,12 @@
       "WebFetch(*)",
       "Search(*)"
     ],
-    "deny": ["Bash(rm -rf *)", "Bash(git push --force *)", "Bash(git reset --hard *)", "Bash(git clean -f *)"]
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(git push --force *)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean -f *)"
+    ]
   },
   "hooks": {
     "Notification": [
@@ -81,5 +86,6 @@
     "command": "bash $HOME/.claude/statusline-command.sh"
   },
   "enabledPlugins": {},
-  "effortLevel": "high"
+  "effortLevel": "high",
+  "model": "opus"
 }
