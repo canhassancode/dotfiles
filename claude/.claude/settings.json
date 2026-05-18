@@ -57,6 +57,7 @@
       "Bash(git clean -f *)"
     ]
   },
+  "model": "opus",
   "hooks": {
     "Notification": [
       {
@@ -86,6 +87,5 @@
     "command": "bash $HOME/.claude/statusline-command.sh"
   },
   "enabledPlugins": {},
-  "effortLevel": "high",
-  "model": "opus"
+  "effortLevel": "xhigh"
 }

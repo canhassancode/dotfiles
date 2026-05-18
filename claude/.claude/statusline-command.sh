@@ -10,8 +10,8 @@ RESET="\033[0m"
 input=$(cat)
 
 model=$(echo "$input" | jq -r '.model.display_name // empty')
-used_pct=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
-total_in=$(echo "$input" | jq -r '.context_window.total_input_tokens // empty')
+used_pct=$(echo "$input" | jq -r '.context_window.used_percentage // 0')
+total_in=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0')
 
 fmt_tokens() {
   local n="$1"
@@ -22,18 +22,13 @@ fmt_tokens() {
   fi
 }
 
-if [ -n "$used_pct" ]; then
-  used_int=$(printf "%.0f" "$used_pct")
-  if [ "$used_int" -gt 10 ]; then
-    colour="$RED"
-  else
-    colour="$YELLOW"
-  fi
-  printf "${colour}${used_int}%%${RESET}"
-  if [ -n "$total_in" ]; then
-    printf " ${OVERLAY0}•${RESET} ${colour}$(fmt_tokens "$total_in")${RESET}"
-  fi
+used_int=$(printf "%.0f" "$used_pct")
+if [ "$used_int" -gt 10 ]; then
+  colour="$RED"
+else
+  colour="$YELLOW"
 fi
+printf "${colour}$(fmt_tokens "$total_in")${RESET} ${OVERLAY0}(${used_int}%%)${RESET}"
 
 if [ -n "$model" ]; then
   printf " ${OVERLAY0}•${RESET} ${SAPPHIRE}[ ${model} ]${RESET}"
