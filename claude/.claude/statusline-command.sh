@@ -5,6 +5,7 @@ RED="\033[38;2;243;139;168m"
 YELLOW="\033[38;2;249;226;175m"
 SAPPHIRE="\033[38;2;116;199;236m"
 OVERLAY0="\033[38;2;108;112;134m"
+OVERLAY1="\033[38;2;127;132;156m"
 RESET="\033[0m"
 
 input=$(cat)
@@ -12,6 +13,10 @@ input=$(cat)
 model=$(echo "$input" | jq -r '.model.display_name // empty')
 used_pct=$(echo "$input" | jq -r '.context_window.used_percentage // 0')
 total_in=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0')
+rate_5h=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // 0')
+rate_7d=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // 0')
+
+effort=$(jq -r '.effortLevel // empty' "$HOME/.claude/settings.json" 2>/dev/null)
 
 fmt_tokens() {
   local n="$1"
@@ -31,5 +36,13 @@ fi
 printf "${colour}$(fmt_tokens "$total_in")${RESET} ${OVERLAY0}(${used_int}%%)${RESET}"
 
 if [ -n "$model" ]; then
-  printf " ${OVERLAY0}•${RESET} ${SAPPHIRE}[ ${model} ]${RESET}"
+  if [ -n "$effort" ]; then
+    printf " ${OVERLAY0}•${RESET} ${SAPPHIRE}[ ${model} • ${effort} ]${RESET}"
+  else
+    printf " ${OVERLAY0}•${RESET} ${SAPPHIRE}[ ${model} ]${RESET}"
+  fi
 fi
+
+rate_5h_int=$(printf "%.0f" "$rate_5h")
+rate_7d_int=$(printf "%.0f" "$rate_7d")
+printf " ${OVERLAY0}•${RESET} ${OVERLAY1}[ s: ${rate_5h_int}%% • w: ${rate_7d_int}%% ]${RESET}"
