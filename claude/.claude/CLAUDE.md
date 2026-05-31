@@ -67,3 +67,12 @@
 - For bugs, test failures, or performance regressions, invoke `/diagnose` to run the disciplined diagnosis loop (build feedback loop → reproduce → hypothesise → fix → regression test)
 - When opening a session on a ticket already in `ready-for-human` (a GitHub issue with that label, or a markdown ticket with that state in its frontmatter), ALWAYS use `/pickup` BEFORE doing anything else. NEVER reflexively reach for `/grill-with-docs` at pickup — full re-grilling is the failure mode `/pickup` exists to prevent. `/pickup` verifies the agent brief against current code and routes to `/tdd`, `/diagnose`, or a targeted re-grill on any drift it finds
 - `ready-for-agent` tickets skip pickup verification — the agent brief is the contract. If a `ready-for-agent` brief feels under-specified when I look at it, treat that as a triage discipline gap (the four-pass discipline in `/grill-with-docs` didn't run), not a pickup problem — flag it to me before proceeding
+
+## Second brain (Obsidian)
+
+My vault at `~/Obsidian/` is an AI-operated second brain. Its domain model, terms, and the content-class confidentiality rule live in `~/Obsidian/CONTEXT.md` — read it before operating on the vault.
+
+- **At the start of a session**, check whether today's Morning Brief exists at `~/Obsidian/Journal/<today YYYY-MM-DD>-brief.md`. If it does NOT exist, offer once to run `/morning-brief`. If it DOES exist, load it silently as context and do NOT prompt about it. Only the missing-brief case interrupts.
+- When acting on my behalf, read `~/Obsidian/Profile/overview.md` (when present) for grounding about me and my active focus.
+- NEVER write Class A content into the vault — secrets, credentials, PII, verbatim proprietary source, or code maps (file paths + commit SHAs). See the content-class rule in `CONTEXT.md`.
+- Second-brain skills: `/morning-brief`, `/eod-summary`, `/inbox`, `/ingest`, `/ask`.

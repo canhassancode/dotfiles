@@ -87,5 +87,5 @@
     "command": "bash $HOME/.claude/statusline-command.sh"
   },
   "enabledPlugins": {},
-  "effortLevel": "xhigh"
+  "effortLevel": "high"
 }
