@@ -19,6 +19,7 @@ Stow is idempotent: re-run after a pull to pick up new files.
 | Package | Stows to | Depends on | Notes |
 |---|---|---|---|
 | [`claude`](claude/) | `~/.claude/` | Claude Code | Global skills, agents, hooks, CLAUDE.md |
+| [`pi`](pi/) | `~/.pi/agent/` | pi coding agent | Guardrail extension for interactive pi |
 | [`ralph`](ralph/) | `~/.local/bin/ralph`, `~/.config/ralph/` | `sbx`, `gh` | AFK Claude loop |
 | [`zsh`](zsh/) | `~/.zshrc` | `oh-my-zsh`, `starship`, `fastfetch` | Adds `~/.local/bin` to `$PATH` |
 | `git` | `~/.gitconfig` | — | |
