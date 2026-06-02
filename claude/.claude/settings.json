@@ -2,6 +2,7 @@
   "permissions": {
     "allow": [
       "Read(*)",
+      "Read(~/Obsidian/**)",
       "Glob(*)",
       "Grep(*)",
       "Bash(ls *)",
@@ -57,8 +58,18 @@
       "Bash(git clean -f *)"
     ]
   },
-  "model": "opus",
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/morning-brief-nudge.sh"
+          }
+        ]
+      }
+    ],
     "Notification": [
       {
         "matcher": "",
