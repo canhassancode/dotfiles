@@ -1,6 +1,7 @@
 #!/bin/bash
 # SessionStart nudge: if the Obsidian vault exists and today has no Morning Brief,
-# inject a one-line reminder into context. Silent (no-op) otherwise — non-nag rule.
+# surface a one-line reminder. Silent (no-op) otherwise — non-nag rule.
+# Emits JSON: systemMessage (shown to the user) + additionalContext (so the model offers /morning-brief).
 
 JOURNAL="$HOME/Obsidian/Journal"
 
@@ -11,7 +12,11 @@ TODAY=$(date +%F)
 BRIEF="$JOURNAL/$TODAY-brief.md"
 
 if [ ! -f "$BRIEF" ]; then
-  echo "No Morning Brief for $TODAY yet — run /morning-brief to compile today (it will also close any unclosed prior day)."
+  MSG="No Morning Brief for $TODAY yet — run /morning-brief to compile today (it also closes any unclosed prior day)."
+  jq -n --arg m "$MSG" '{
+    systemMessage: $m,
+    hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: $m }
+  }'
 fi
 
 exit 0
