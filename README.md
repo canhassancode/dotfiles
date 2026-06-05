@@ -26,6 +26,7 @@ Stow is idempotent: re-run after a pull to pick up new files.
 | `nvim` | `~/.config/nvim/` | `nvim` ≥ 0.10 | |
 | `tmux` | `~/.tmux.conf` | `tmux` | |
 | `kitty`, `ghostty` | `~/.config/<term>/` | terminal of choice | |
+| [`herdr`](herdr/) | `~/.config/herdr/` | `herdr` | `ctrl+s` prefix; runtime sockets/logs stay local. Reload live: `herdr server reload-config` |
 | `starship` | `~/.config/starship.toml` | `starship` | |
 | `hyprland`, `quickshell`, `waybar` | `~/.config/<tool>/` | Linux only | |
 | `yazi` | `~/.config/yazi/` | `yazi` | |

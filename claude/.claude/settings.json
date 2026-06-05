@@ -1,4 +1,50 @@
 {
+  "effortLevel": "high",
+  "enabledPlugins": {},
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "$HOME/.claude/hooks/guard.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash|Read|Edit|Write"
+      },
+      {
+        "hooks": [
+          {
+            "command": "$HOME/.claude/hooks/sql-guard.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "mcp__.*__(execute_sql|execute_query|query|explain_query)"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "$HOME/.claude/hooks/morning-brief-nudge.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "startup|clear"
+      },
+      {
+        "hooks": [
+          {
+            "command": "bash '/Users/hssn/.claude/hooks/herdr-agent-state.sh' session",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ]
+  },
+  "model": "opus",
   "permissions": {
     "allow": [
       "Read(*)",
@@ -44,55 +90,8 @@
       "Bash(git clean -f *)"
     ]
   },
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "startup|clear",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/morning-brief-nudge.sh"
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "osascript -e 'display notification \"Claude needs your attention\" with title \"Claude Code\" sound name \"Glass\"'"
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash|Read|Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/guard.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "mcp__.*__(execute_sql|execute_query|query|explain_query)",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/sql-guard.sh"
-          }
-        ]
-      }
-    ]
-  },
   "statusLine": {
-    "type": "command",
-    "command": "bash $HOME/.claude/statusline-command.sh"
-  },
-  "enabledPlugins": {},
-  "effortLevel": "high",
-  "model": "opus"
+    "command": "bash $HOME/.claude/statusline-command.sh",
+    "type": "command"
+  }
 }
