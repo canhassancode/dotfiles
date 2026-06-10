@@ -2,3 +2,6 @@ onboarding = false
 
 [keys]
 prefix = "ctrl+s"
+
+[theme]
+name = "tokyo-night"
