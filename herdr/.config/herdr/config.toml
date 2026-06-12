@@ -3,5 +3,15 @@ onboarding = false
 [keys]
 prefix = "ctrl+s"
 
+[ui]
+agent_panel_scope = "all"
+show_agent_labels_on_pane_borders = true
+
 [theme]
 name = "tokyo-night"
+
+[ui.sound]
+enabled = false
+
+[ui.toast]
+delivery = "off"

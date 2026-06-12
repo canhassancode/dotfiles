@@ -1,50 +1,4 @@
 {
-  "effortLevel": "high",
-  "enabledPlugins": {},
-  "hooks": {
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "command": "$HOME/.claude/hooks/guard.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": "Bash|Read|Edit|Write"
-      },
-      {
-        "hooks": [
-          {
-            "command": "$HOME/.claude/hooks/sql-guard.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": "mcp__.*__(execute_sql|execute_query|query|explain_query)"
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "command": "$HOME/.claude/hooks/morning-brief-nudge.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": "startup|clear"
-      },
-      {
-        "hooks": [
-          {
-            "command": "bash '/Users/hssn/.claude/hooks/herdr-agent-state.sh' session",
-            "timeout": 10,
-            "type": "command"
-          }
-        ],
-        "matcher": "*"
-      }
-    ]
-  },
-  "model": "opus",
   "permissions": {
     "allow": [
       "Read(*)",
@@ -75,23 +29,55 @@
       "mcp__claude_ai_Google_Drive__search_files",
       "mcp__claude_ai_Google_Drive__get_file_metadata"
     ],
-    "ask": [
-      "Bash(node *)",
-      "Bash(npx *)",
-      "Bash(curl *)",
-      "Bash(pnpm install *)",
-      "Bash(pnpm exec *)",
-      "Bash(git push *)"
+    "deny": ["Bash(rm -rf *)", "Bash(git push --force *)", "Bash(git reset --hard *)", "Bash(git clean -f *)"],
+    "ask": ["Bash(node *)", "Bash(npx *)", "Bash(curl *)", "Bash(pnpm install *)", "Bash(pnpm exec *)", "Bash(git push *)"]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/guard.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*__(execute_sql|execute_query|query|explain_query)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/sql-guard.sh"
+          }
+        ]
+      }
     ],
-    "deny": [
-      "Bash(rm -rf *)",
-      "Bash(git push --force *)",
-      "Bash(git reset --hard *)",
-      "Bash(git clean -f *)"
+    "SessionStart": [
+      {
+        "matcher": "startup|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/morning-brief-nudge.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash '/Users/hssn/.claude/hooks/herdr-agent-state.sh' session",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
-    "command": "bash $HOME/.claude/statusline-command.sh",
-    "type": "command"
-  }
+    "type": "command",
+    "command": "bash $HOME/.claude/statusline-command.sh"
+  },
+  "effortLevel": "high"
 }
