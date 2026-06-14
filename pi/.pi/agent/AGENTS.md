@@ -102,6 +102,25 @@ instructions. These override any built-in defaults:
 - **To-PRD** — to turn conversation context into a PRD, use `to-prd`.
 - **Triage** — to triage issues through the state machine, use `triage`.
 
+## Subagents
+
+Pi subagent conventions are documented in `pi/CONTEXT.md` — read it before launching
+subagent workflows. Quick reference:
+
+- **Parent orchestrator**: xhigh thinking. The single adversarial reasoner. Drives HITL
+  grilling and implementation orchestration.
+- **Context subagents** (scout, ask, researcher): high thinking. Retrieval and synthesis
+  only — never adversarial reasoning.
+- **TDD subagents** (test-writer, implementer, refactorer): high thinking, fresh context
+  each phase. The architectural invariant is context isolation — the Test Writer never
+  sees implementation code, the Implementer never sees the spec.
+- **Planning fan-out**: three parallel async subagents (scout + ask + researcher) before
+  HITL grilling. Execute inline, not via saved chain.
+- **TDD loop**: pickup → decompose slices → RED (test writer) → GREEN (implementer) →
+  REFACTOR (refactorer) → parent invokes `/commit`. One commit per slice.
+
+Full conventions, model tiering, and TDD phase detail: read `pi/CONTEXT.md`.
+
 ## Second brain (Obsidian)
 
 My vault at `~/Obsidian/` is an AI-operated second brain. Its domain model, terms, and the

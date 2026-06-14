@@ -2,11 +2,20 @@
   "lastChangelogVersion": "0.79.3",
   "defaultProvider": "deepseek",
   "defaultModel": "deepseek-v4-pro",
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "xhigh",
   "hideThinkingBlock": true,
   "packages": [
     "npm:pi-web-access",
     "npm:pi-mcp-adapter",
     "npm:pi-subagents"
-  ]
+  ],
+  "subagents": {
+    "agentOverrides": {
+      "scout": { "thinking": "high" },
+      "ask": { "thinking": "high" },
+      "researcher": { "thinking": "high" },
+      "reviewer": { "thinking": "high" },
+      "worker": { "thinking": "high" }
+    }
+  }
 }
