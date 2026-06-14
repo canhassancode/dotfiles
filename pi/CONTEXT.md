@@ -3,7 +3,7 @@
 The tiered model and subagent orchestration patterns for pi coding sessions.
 Designed 2026-06-14; grilling source: `Library/concepts/` (ingest pending).
 
-## Model tiering
+## Model tiering (DeepSeek — personal)
 
 | Role | Model | Thinking | Rationale |
 |---|---|---|---|
@@ -15,6 +15,26 @@ Designed 2026-06-14; grilling source: `Library/concepts/` (ingest pending).
 The parent at xhigh is the single adversarial reasoner. All other agents run high.
 V4-Flash is ~20× cheaper than V4-Pro at output ($0.28/M vs $3.48/M list) and
 sufficient for mechanical work (test generation, straightforward implementation).
+
+## Model tiering (OpenAI — Employment/Carpata)
+
+Designed 2026-06-14 (grill: OpenAI Tiered TDD Translation).
+Settings template: `pi/.pi/agent/settings.openai.json`.
+
+| Role | Model | Reasoning effort | Rationale |
+|---|---|---|---|
+| **Parent orchestrator** | gpt-5.4 | high | Adversarial reasoning. GPT-5.4 ≈ V4-Pro on coding, leads on agentic reasoning (Terminal-Bench 75.1 vs 67.9). `high` maps closer to DeepSeek's `max` than OpenAI's `xhigh` |
+| **Scout** (code trace) | gpt-5.4-mini | high | Mechanical grep/read/trace. Reasoning barely matters |
+| **Ask** (vault sweep) | gpt-5.4-mini | high | Index-first retrieval, mechanical |
+| **Researcher** (external docs) | gpt-5.4 | high | Synthesises benchmarks, cross-references, spots gaps. Benefits from stronger reasoning |
+| **Reviewer** | gpt-5.4 | high | Diff inspection, structural critique |
+| **Test writer** | gpt-5.4-mini | high | Mechanical — writes assertions from spec. Bounded scope |
+| **Implementer** (default) | gpt-5.4-mini | high | Straightforward implementation from clean failing test. Escalate to gpt-5.4-high for multi-file invariants |
+| **Refactorer** | gpt-5.4 | high | Structural reasoning (extract module? simplify contract?) rewards deeper thinking |
+
+Cost context: gpt-5.4-mini output at $4.50/M is 16× DeepSeek V4-Flash ($0.28/M).
+gpt-5.4 output at $15/M is 4.3× V4-Pro ($3.48/M). Carpata credits are finite;
+mini is preferred for all mechanical roles, gpt-5.4 reserved for reasoning.
 
 ## Planning fan-out
 
@@ -95,13 +115,25 @@ Triggered after `/pickup` verifies a ticket brief against current code.
 
 Agent overrides live in `pi/.pi/agent/settings.json` → `subagents.agentOverrides`.
 
-Custom TDD agents live in `pi/.pi/agent/agents/` (symlinked to `~/.pi/agent/agents/`):
+Custom TDD agents live in `pi/.pi/agent/agents/` (symlinked to `~/.pi/agent/agents/`).
+Agent files carry `model:` in frontmatter as DeepSeek defaults. `agentOverrides` in
+settings.json take precedence — on the Employment machine, the OpenAI settings override
+every TDD agent's model to the OpenAI equivalent.
 
-| Agent | Model | Thinking |
-|---|---|---|
-| `tdd-test-writer` | deepseek-v4-flash | high |
-| `tdd-implementer` | deepseek-v4-flash | high |
-| `tdd-refactorer` | deepseek-v4-pro | high |
+**Provider switching:** `settings.json` is the only machine-specific file.
+On the personal machine it stays symlinked to the DeepSeek defaults.
+On the work machine it is a local copy of `settings.openai.json`.
+All other pi config (agents, AGENTS.md, CONTEXT.md, extensions) remains symlinked and shared.
+
+| Agent | DeepSeek (personal) | OpenAI (Employment) | Thinking |
+|---|---|---|---|
+| `tdd-test-writer` | deepseek-v4-flash | gpt-5.4-mini | high |
+| `tdd-implementer` | deepseek-v4-flash | gpt-5.4-mini | high |
+| `tdd-refactorer` | deepseek-v4-pro | gpt-5.4 | high |
+| `scout` | deepseek-v4-pro | gpt-5.4-mini | high |
+| `ask` | deepseek-v4-pro | gpt-5.4-mini | high |
+| `researcher` | deepseek-v4-pro | gpt-5.4 | high |
+| `reviewer` | deepseek-v4-pro | gpt-5.4 | high |
 
 ## Context isolation (the architectural invariant)
 

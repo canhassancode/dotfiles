@@ -18,7 +18,10 @@
       "ask": { "thinking": "high" },
       "researcher": { "thinking": "high" },
       "reviewer": { "thinking": "high" },
-      "worker": { "thinking": "high" }
+      "worker": { "thinking": "high" },
+      "tdd-test-writer": { "model": "deepseek-v4-flash", "thinking": "high" },
+      "tdd-implementer": { "model": "deepseek-v4-flash", "thinking": "high" },
+      "tdd-refactorer": { "model": "deepseek-v4-pro", "thinking": "high" }
     }
   }
 }

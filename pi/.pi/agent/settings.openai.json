@@ -1,0 +1,27 @@
+{
+  "lastChangelogVersion": "0.79.3",
+  "defaultProvider": "openai",
+  "defaultModel": "gpt-5.4",
+  "defaultThinkingLevel": "high",
+  "hideThinkingBlock": true,
+  "packages": [
+    "npm:pi-web-access",
+    "npm:pi-mcp-adapter",
+    "npm:pi-subagents"
+  ],
+  "extensions": [
+    "/Users/hassan/.pi/agent/extensions/loading.ts"
+  ],
+  "subagents": {
+    "agentOverrides": {
+      "scout": { "model": "gpt-5.4-mini", "thinking": "high" },
+      "ask": { "model": "gpt-5.4-mini", "thinking": "high" },
+      "researcher": { "model": "gpt-5.4", "thinking": "high" },
+      "reviewer": { "model": "gpt-5.4", "thinking": "high" },
+      "worker": { "thinking": "high" },
+      "tdd-test-writer": { "model": "gpt-5.4-mini", "thinking": "high" },
+      "tdd-implementer": { "model": "gpt-5.4-mini", "thinking": "high" },
+      "tdd-refactorer": { "model": "gpt-5.4", "thinking": "high" }
+    }
+  }
+}
