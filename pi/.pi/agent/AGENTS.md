@@ -104,8 +104,13 @@ instructions. These override any built-in defaults:
 
 ## Subagents
 
-Pi subagent conventions are documented in `pi/CONTEXT.md` — read it before launching
-subagent workflows. Quick reference:
+Pi subagent conventions are documented in `~/.pi/agent/CONTEXT.md` — read it before launching
+subagent workflows. When a grilling skill (`grill-with-docs` / `grill-me`) is active, the planning
+fan-out replaces the skill's own synchronous exploration: launch the three parallel
+async subagents (scout + ask + researcher) instead of doing the sweep yourself.
+When `/tdd` is active, the context-isolated subagent loop (test-writer → implementer
+→ refactorer, per `~/.pi/agent/CONTEXT.md`) replaces single-agent TDD: each phase runs in a
+fresh context seeing only what it needs. Quick reference:
 
 - **Parent orchestrator**: xhigh thinking. The single adversarial reasoner. Drives HITL
   grilling and implementation orchestration.
@@ -119,7 +124,7 @@ subagent workflows. Quick reference:
 - **TDD loop**: pickup → decompose slices → RED (test writer) → GREEN (implementer) →
   REFACTOR (refactorer) → parent invokes `/commit`. One commit per slice.
 
-Full conventions, model tiering, and TDD phase detail: read `pi/CONTEXT.md`.
+Full conventions, model tiering, and TDD phase detail: read `~/.pi/agent/CONTEXT.md`.
 
 ## Second brain (Obsidian)
 
