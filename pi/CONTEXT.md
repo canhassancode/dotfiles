@@ -95,10 +95,13 @@ Triggered after `/pickup` verifies a ticket brief against current code.
 
 Agent overrides live in `pi/.pi/agent/settings.json` → `subagents.agentOverrides`.
 
-Custom TDD agents (`tdd-test-writer`, `tdd-implementer`, `tdd-refactorer`) are
-not yet created — they require agent `.md` files in `~/.pi/agent/agents/`
-symlinked from this dotfiles package. Until then, TDD subagent tasks specify
-model and thinking inline.
+Custom TDD agents live in `pi/.pi/agent/agents/` (symlinked to `~/.pi/agent/agents/`):
+
+| Agent | Model | Thinking |
+|---|---|---|
+| `tdd-test-writer` | deepseek-v4-flash | high |
+| `tdd-implementer` | deepseek-v4-flash | high |
+| `tdd-refactorer` | deepseek-v4-pro | high |
 
 ## Context isolation (the architectural invariant)
 
