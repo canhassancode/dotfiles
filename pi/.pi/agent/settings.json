@@ -9,6 +9,9 @@
     "npm:pi-mcp-adapter",
     "npm:pi-subagents"
   ],
+  "extensions": [
+    "/Users/hassan/.pi/agent/extensions/loading.ts"
+  ],
   "subagents": {
     "agentOverrides": {
       "scout": { "thinking": "high" },
