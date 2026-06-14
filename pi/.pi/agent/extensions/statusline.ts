@@ -20,6 +20,21 @@ export default function (pi: ExtensionAPI) {
     requestRender();
   });
 
+  pi.events.on("subagent:async-complete", (data: unknown) => {
+    const payload = data as { results?: Array<{ modelAttempts?: Array<{ usage?: { cost?: number } }> }> } | undefined;
+    if (payload?.results) {
+      for (const r of payload.results) {
+        const attempts = r.modelAttempts;
+        if (attempts) {
+          for (const a of attempts) {
+            subagentCost += a.usage?.cost ?? 0;
+          }
+        }
+      }
+    }
+    requestRender();
+  });
+
   pi.on("session_start", async (_event, ctx) => {
     subagentCost = 0;
     ctx.ui.setFooter((tui, theme, footerData) => {
@@ -58,7 +73,7 @@ export default function (pi: ExtensionAPI) {
           const tokenColour =
             pctInt > 10 ? theme.fg("error", fmt(tokens)) : theme.fg("dim", fmt(tokens));
           const costText = subagentCost > 0
-            ? `$${sessionCost.toFixed(2)}+${subagentCost.toFixed(2)}`
+            ? `$${sessionCost.toFixed(2)}+$${subagentCost.toFixed(2)}`
             : `$${sessionCost.toFixed(2)}`;
           const left = [
             `${tokenColour} ${theme.fg("dim", `(${pctInt}%)`)}`,
