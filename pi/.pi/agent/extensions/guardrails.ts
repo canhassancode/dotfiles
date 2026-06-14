@@ -47,6 +47,13 @@ const confirmBashPatterns: RegExp[] = [
 	/(?:curl|wget)\b[\s\S]*\|\s*(?:sudo\s+)?(?:ba)?sh\b/i,
 ];
 
+const guardrailExtensions: string[] = [
+	join(homedir(), ".pi", "agent", "extensions", "guardrails.ts"),
+];
+
+const isExtensionGuardrail = (absolutePath: string): boolean =>
+	guardrailExtensions.some((guardPath) => absolutePath === guardPath);
+
 const secretPrefixes: string[] = [
 	join(homedir(), ".ssh"),
 	join(homedir(), ".aws"),
@@ -259,6 +266,15 @@ export default function (pi: ExtensionAPI) {
 			if (target.includes("/.git/") || isSecretPath(target)) {
 				if (ctx.hasUI) ctx.ui.notify(`Blocked write to protected path: ${event.input.path}`, "warning");
 				return { block: true, reason: `Writing "${event.input.path}" is blocked (protected path)` };
+			}
+			if (isExtensionGuardrail(target)) {
+				if (!ctx.hasUI) {
+					return { block: true, reason: `Writing "${event.input.path}" is blocked — guardrails cannot be edited without UI` };
+				}
+				const ok = await ctx.ui.confirm("⚠️ Guardrail — edit guardrails.ts?", `Editing ${event.input.path} bypasses agent guardrails. Allow?`);
+				if (!ok) {
+					return { block: true, reason: "Blocked by user" };
+				}
 			}
 			return undefined;
 		}

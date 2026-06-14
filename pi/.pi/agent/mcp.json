@@ -1,0 +1,17 @@
+{
+  "imports": ["claude-code", "claude-desktop"],
+  "mcpServers": {
+    "sentry": {
+      "url": "https://mcp.sentry.dev/mcp"
+    },
+    "supabase": {
+      "url": "https://mcp.supabase.com/mcp"
+    },
+    "posthog": {
+      "url": "https://mcp.posthog.com/mcp"
+    },
+    "neon-db": {
+      "url": "https://mcp.neon.tech/mcp"
+    }
+  }
+}
