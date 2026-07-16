@@ -2,8 +2,7 @@
   "permissions": {
     "allow": [
       "Read(*)",
-      "Edit(/Users/hssn/Obsidian/**)",
-      "Write(/Users/hssn/Obsidian/**)",
+      "Edit(~/Obsidian/**)",
       "Glob(*)",
       "Grep(*)",
       "Search(*)",
@@ -29,22 +28,11 @@
       "mcp__claude_ai_Google_Drive__search_files",
       "mcp__claude_ai_Google_Drive__get_file_metadata"
     ],
-    "deny": [
-      "Bash(rm -rf *)",
-      "Bash(git push --force *)",
-      "Bash(git reset --hard *)",
-      "Bash(git clean -f *)"
-    ],
-    "ask": [
-      "Bash(node *)",
-      "Bash(npx *)",
-      "Bash(curl *)",
-      "Bash(pnpm install *)",
-      "Bash(pnpm exec *)",
-      "Bash(git push *)"
-    ],
+    "deny": ["Bash(rm -rf *)", "Bash(git push --force *)", "Bash(git reset --hard *)", "Bash(git clean -f *)"],
+    "ask": ["Bash(node *)", "Bash(npx *)", "Bash(curl *)", "Bash(pnpm install *)", "Bash(pnpm exec *)", "Bash(git push *)"],
     "defaultMode": "auto"
   },
+  "model": "opus",
   "hooks": {
     "PreToolUse": [
       {
@@ -75,16 +63,6 @@
             "command": "$HOME/.claude/hooks/morning-brief-nudge.sh"
           }
         ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash '/Users/hssn/.claude/hooks/herdr-agent-state.sh' session",
-            "timeout": 10
-          }
-        ]
       }
     ]
   },
@@ -92,5 +70,6 @@
     "type": "command",
     "command": "bash $HOME/.claude/statusline-command.sh"
   },
-  "effortLevel": "xhigh"
+  "effortLevel": "medium",
+  "theme": "auto"
 }
