@@ -75,6 +75,24 @@
             "command": "$HOME/.claude/hooks/sql-guard.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/commit-guard.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/pr-guard.sh"
+          }
+        ]
       }
     ],
     "SessionStart": [
