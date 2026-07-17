@@ -1,11 +1,13 @@
 ## Repo layout: GNU Stow
 
-This is a GNU Stow-managed dotfiles repo. Each top-level directory (e.g. `zsh/`, `nvim/`, `git/`) is an independent stowable package. Stow creates symlinks from `$HOME` into `~/dotfiles`:
+This is a GNU Stow-managed dotfiles repo. Each top-level directory (e.g. `zsh/`, `kitty/`, `git/`) is an independent stowable package. Stow creates symlinks from `$HOME` into `~/dotfiles`:
 
 - `cd ~/dotfiles && stow zsh` → `~/.zshrc` symlinks to `~/dotfiles/zsh/.zshrc`
-- `cd ~/dotfiles && stow nvim` → `~/.config/nvim/` symlinks into `~/dotfiles/nvim/`
+- `cd ~/dotfiles && stow kitty` → `~/.config/kitty/` symlinks into `~/dotfiles/kitty/`
 
-**The directory tree inside each package mirrors the target tree under `$HOME`.** For example, `git/.gitconfig` stows to `~/.gitconfig`, `nvim/.config/nvim/init.lua` stows to `~/.config/nvim/init.lua`.
+**The directory tree inside each package mirrors the target tree under `$HOME`.** For example, `git/.gitconfig` stows to `~/.gitconfig`, `kitty/.config/kitty/kitty.conf` stows to `~/.config/kitty/kitty.conf`.
+
+Archived packages live in `archived/` and are not stowed.
 
 **When editing files here, you are editing the real file** — Stow's symlinks mean `~/.zshrc` *is* `~/dotfiles/zsh/.zshrc`. No copy step needed; changes take effect immediately. `stow` is idempotent and safe to re-run after pulling.
 

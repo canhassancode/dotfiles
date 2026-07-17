@@ -4,7 +4,7 @@ GNU Stow-managed configuration. Each top-level directory is an independent stowa
 
 ## Prerequisites
 
-`stow`, `git`, `gh`. Optional per package: `sbx` (for [ralph](ralph/)), `oh-my-zsh` (for `zsh`).
+`stow`, `git`, `gh`. Optional per package: `oh-my-zsh` (for `zsh`).
 
 ## Installation
 
@@ -20,16 +20,16 @@ Stow is idempotent: re-run after a pull to pick up new files.
 |---|---|---|---|
 | [`claude`](claude/) | `~/.claude/` | Claude Code | Global skills, agents, hooks, CLAUDE.md |
 | [`pi`](pi/) | `~/.pi/agent/` | pi coding agent | Guardrail extension for interactive pi |
-| [`ralph`](ralph/) | `~/.local/bin/ralph`, `~/.config/ralph/` | `sbx`, `gh` | AFK Claude loop |
 | [`zsh`](zsh/) | `~/.zshrc` | `oh-my-zsh`, `starship`, `fastfetch` | Adds `~/.local/bin` to `$PATH` |
 | `git` | `~/.gitconfig` | — | |
-| `nvim` | `~/.config/nvim/` | `nvim` ≥ 0.10 | |
 | `tmux` | `~/.tmux.conf` | `tmux` | |
-| `kitty`, `ghostty` | `~/.config/<term>/` | terminal of choice | |
+| `kitty` | `~/.config/kitty/` | terminal of choice | |
 | [`herdr`](herdr/) | `~/.config/herdr/` | `herdr` | `ctrl+s` prefix; runtime sockets/logs stay local. Reload live: `herdr server reload-config` |
 | `starship` | `~/.config/starship.toml` | `starship` | |
 | `hyprland`, `quickshell`, `waybar` | `~/.config/<tool>/` | Linux only | |
 | `yazi` | `~/.config/yazi/` | `yazi` | |
+
+Archived packages live in [`archived/`](archived/) and are no longer stowed: `ghostty`, `nvim`, `ralph`.
 
 ## Bootstrap on a new machine
 
@@ -38,5 +38,5 @@ brew install stow gh                          # macOS; pacman/apt equivalents on
 git clone <this-repo> ~/dotfiles
 cd ~/dotfiles
 stow zsh git tmux                             # baseline shell
-stow claude ralph                             # Claude tooling
+stow claude                                   # Claude tooling
 ```
