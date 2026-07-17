@@ -28,8 +28,20 @@
       "mcp__claude_ai_Google_Drive__search_files",
       "mcp__claude_ai_Google_Drive__get_file_metadata"
     ],
-    "deny": ["Bash(rm -rf *)", "Bash(git push --force *)", "Bash(git reset --hard *)", "Bash(git clean -f *)"],
-    "ask": ["Bash(node *)", "Bash(npx *)", "Bash(curl *)", "Bash(pnpm install *)", "Bash(pnpm exec *)", "Bash(git push *)"],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(git push --force *)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean -f *)"
+    ],
+    "ask": [
+      "Bash(node *)",
+      "Bash(npx *)",
+      "Bash(curl *)",
+      "Bash(pnpm install *)",
+      "Bash(pnpm exec *)",
+      "Bash(git push *)"
+    ],
     "defaultMode": "auto"
   },
   "model": "opus",
@@ -71,5 +83,6 @@
     "command": "bash $HOME/.claude/statusline-command.sh"
   },
   "effortLevel": "medium",
-  "theme": "auto"
+  "theme": "auto",
+  "autoMemoryEnabled": false
 }
