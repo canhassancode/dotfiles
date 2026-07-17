@@ -22,6 +22,11 @@
 # that don't map to a local bin are skipped: version pins (pkg@1), scoped or
 # path-like names (@scope/pkg, ./bin), and the -p/--package/-c/--call forms.
 #
+# Monorepo support: a leading `cd <dir> && ...` shifts lockfile/script detection
+# to that directory (resolved against tool_input.cwd), so `cd packages/api &&
+# npx tsc` uses packages/api's manager and scripts. Only the leading cd is
+# honoured — mid-chain `cd`s (a && cd b && npx x) still resolve from cwd.
+#
 # Fail-open: no jq, no command, or a parse failure exits 0 and changes nothing.
 
 INPUT=$(cat)
@@ -35,6 +40,19 @@ printf '%s' "$cmd" | grep -Eq '(^|[;&|(]|=[^[:space:]]* )[[:space:]]*npx[[:space
   printf '%s' "$cmd" | grep -Eq '^[[:space:]]*npx[[:space:]]' || exit 0
 
 [ -z "$cwd" ] && cwd=$PWD
+
+cd_target=$(CMD="$cmd" perl -e '
+  my $c = $ENV{CMD};
+  if ($c =~ /^\s*cd\s+(?:"([^"]+)"|'\''([^'\'']+)'\''|([^\s;&|]+))\s*(?:&&|;)/) {
+    my $d = defined $1 ? $1 : defined $2 ? $2 : $3;
+    $d =~ s{^~(?=/|$)}{$ENV{HOME}};
+    print $d;
+  }
+' 2>/dev/null)
+if [ -n "$cd_target" ]; then
+  resolved=$( (cd "$cwd" 2>/dev/null && cd "$cd_target" 2>/dev/null && pwd) )
+  [ -n "$resolved" ] && cwd=$resolved
+fi
 
 find_up() {
   local dir=$1 name=$2
