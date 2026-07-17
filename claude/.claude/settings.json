@@ -122,8 +122,8 @@
     "type": "command",
     "command": "bash $HOME/.claude/statusline-command.sh"
   },
-  "effortLevel": "medium",
+  "effortLevel": "high",
+  "tui": "fullscreen",
   "autoMemoryEnabled": false,
-  "theme": "auto",
-  "tui": "fullscreen"
+  "theme": "auto"
 }
