@@ -14,28 +14,24 @@
 ## Tone
 
 - Terse — lead with the answer, no preamble, no restating the question
+- When you are proposing recommendations, supply examples from the code, and how it works into the flow
 - No trailing summaries of what you just did — the diff shows it
 - Direct, not hedged. "Do X" beats "you might consider X"
 - Challenge weak reasoning. Don't agree to be agreeable
 - Ask one clarifying question when ambiguous; don't ask permission for obvious next steps
 - Structure (tables, bullets) only when it earns its place. Prose for short answers
 
-## TypeScript
+## Coding Standards
 
-- No `any` types — use existing types or create them in a centralised location
+- No `any` types or Typescript equivalent — use existing types or create them in a centralised location
 - Explicit return types on functions. Explicit intermediate variables over clever composition
 - Deep modules with simple interfaces (Ousterhout) over shallow modules — hide complexity behind clear boundaries
 
 ## Code style
 
 - British English in all code, comments, and copy (e.g. `normalised`, `organised`, `colour`)
-- No code comments — well-named variables and clear code are the documentation
+- ZERO CODE COMMENTS — well-named variables and clear code are the documentation (think Robert C. Martin: Clean Code). Prefer `getUserId` over `// this function returns user Id`
 - Exception: interface-level JSDoc only when the type signature can't express the contract (throws, ordering, required call sequence, side effects)
-
-## Testing
-
-- TDD by default: red → green → refactor
-- When you own the cycle, invoke `/tdd` to drive the red-green-refactor loop — show the failing test and get confirmation before implementing
 
 ## Security
 
@@ -43,37 +39,3 @@
 - Validate all external input at system boundaries. Trust internal code
 - When touching auth flows, review the entire chain — don't patch in isolation
 - Default to least-privilege for IAM roles, API scopes, and database permissions
-
-## Verification
-
-- Run type-check, lint, and relevant tests before presenting work as done
-- Fix root causes, don't suppress failures or skip checks
-- If tests don't exist for what you're changing, write them
-- Follow the repo's testing strategy — check CLAUDE.md or test files for conventions before writing tests
-
-## Context
-
-- Check the current date before making time-sensitive searches or assumptions
-- Respect repo-level CLAUDE.md, .cursorrules, and architecture docs — they override these globals
-- TypeScript is my primary language (backend and frontend). Beyond that I stay flexible — REST/GraphQL, frameworks, DB runtimes vary by project. Read the repo to learn the stack; don't assume
-
-## Skills override defaults
-
-- When asked to commit (e.g. "commit this", "save this", "lets commit", "get this in"), ALWAYS use the `/commit` skill via the Skill tool. NEVER follow the built-in commit instructions
-- When asked to create a pull request or open a PR, ALWAYS use the `/pr` skill via the Skill tool. NEVER follow the built-in PR creation instructions
-- For non-trivial planning, stress-test scope and approach before implementation by invoking a grilling skill. Decision order:
-  1. If the work touches the domain model, glossary, or an architecturally significant decision (new domain concepts, ambiguous terminology, hard-to-reverse calls, multi-context spans) — suggest `/grill-with-docs` and wait for confirmation before proceeding
-  2. Otherwise — suggest `/grill-me`. I will select which one at the time
-- For bugs, test failures, or performance regressions, invoke `/diagnose` to run the disciplined diagnosis loop (build feedback loop → reproduce → hypothesise → fix → regression test)
-- When opening a session on a ticket already in `ready-for-human` (a GitHub issue with that label, or a markdown ticket with that state in its frontmatter), ALWAYS use `/pickup` BEFORE doing anything else. NEVER reflexively reach for `/grill-with-docs` at pickup — full re-grilling is the failure mode `/pickup` exists to prevent. `/pickup` verifies the agent brief against current code and routes to `/tdd`, `/diagnose`, or a targeted re-grill on any drift it finds
-- `ready-for-agent` tickets skip pickup verification — the agent brief is the contract. If a `ready-for-agent` brief feels under-specified when I look at it, treat that as a triage discipline gap (the four-pass discipline in `/grill-with-docs` didn't run), not a pickup problem — flag it to me before proceeding
-
-## Second brain (Obsidian)
-
-My vault at `~/Obsidian/` is an AI-operated second brain. Its domain model, terms, and the content-class confidentiality rule live in `~/Obsidian/CONTEXT.md` — read it before operating on the vault.
-
-- **At the start of a session**, check whether today's Morning Brief exists at `~/Obsidian/Journal/<today YYYY-MM-DD>-brief.md`. If it does NOT exist, offer once to run `/morning-brief`. If it DOES exist, load it silently as context and do NOT prompt about it. Only the missing-brief case interrupts.
-- When acting on my behalf, read `~/Obsidian/Profile/overview.md` (when present) for grounding about me and my active focus.
-- NEVER write Class A content into the vault — secrets, credentials, tokens, customer PII and financial data, verbatim proprietary source. File paths and commit SHAs are **not** Class A — they're B-private (fine in the encrypted vault, stripped only when publishing to a shared surface like Notion). A customer's *feedback* is Class B (keep it); a customer's *identity* is Class A (pseudonymise it). See the content-class rule in `CONTEXT.md`.
-- **Daily log (the spine).** The day is three files: the **brief** is the morning *plan* (write-once, don't babysit — unchecked boxes are not failure), the **log** (`~/Obsidian/Journal/<today>-log.md`) is the living *record*, and the **summary** is the EOD *consolidation*. Whenever the vault exists and I complete a meaningful unit of work — a decision (with the WHY), a routed grill, a finished item, a blocker hit — append a one-line timestamped entry to today's log via the `/log` convention. This is not at your discretion; capturing the WHY in the moment is the whole point. `/eod-summary` then consolidates the log rather than reconstructing the day from memory.
-- Second-brain skills: `/morning-brief`, `/log`, `/eod-summary`, `/inbox`, `/ingest`, `/ask`.
