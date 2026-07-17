@@ -41,7 +41,14 @@
       "CronDelete",
       "CronList"
     ],
-    "ask": ["Bash(node *)", "Bash(npx *)", "Bash(curl *)", "Bash(pnpm install *)", "Bash(pnpm exec *)", "Bash(git push *)"],
+    "ask": [
+      "Bash(node *)",
+      "Bash(npx *)",
+      "Bash(curl *)",
+      "Bash(pnpm install *)",
+      "Bash(pnpm exec *)",
+      "Bash(git push *)"
+    ],
     "defaultMode": "auto"
   },
   "model": "opus",
@@ -101,7 +108,7 @@
     "type": "command",
     "command": "bash $HOME/.claude/statusline-command.sh"
   },
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
   "theme": "auto"
