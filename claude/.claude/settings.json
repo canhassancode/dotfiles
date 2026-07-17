@@ -32,7 +32,17 @@
       "Bash(rm -rf *)",
       "Bash(git push --force *)",
       "Bash(git reset --hard *)",
-      "Bash(git clean -f *)"
+      "Bash(git clean -f *)",
+      "EnterPlanMode",
+      "ExitPlanMode",
+      "DesignSync",
+      "NotebookEdit",
+      "ReportFindings",
+      "AskUserQuestion",
+      "ScheduleWakeup",
+      "CronCreate",
+      "CronDelete",
+      "CronList"
     ],
     "ask": [
       "Bash(node *)",
@@ -84,5 +94,8 @@
   },
   "effortLevel": "medium",
   "theme": "auto",
-  "autoMemoryEnabled": false
+  "autoMemoryEnabled": false,
+  "disableBundledSkills": true,
+  "disableWorkflows": true,
+  "disableArtifact": true
 }
