@@ -20,9 +20,6 @@
       "Bash(go build *)",
       "Bash(docker compose *)",
       "Bash(docker ps *)",
-      "mcp__claude_ai_Notion__notion-fetch",
-      "mcp__claude_ai_Notion__notion-search",
-      "mcp__claude_ai_Notion__notion-get-users",
       "mcp__claude_ai_Slack__slack_search_users",
       "mcp__claude_ai_Slack__slack_search_channels",
       "mcp__claude_ai_Google_Drive__search_files",
@@ -44,14 +41,7 @@
       "CronDelete",
       "CronList"
     ],
-    "ask": [
-      "Bash(node *)",
-      "Bash(npx *)",
-      "Bash(curl *)",
-      "Bash(pnpm install *)",
-      "Bash(pnpm exec *)",
-      "Bash(git push *)"
-    ],
+    "ask": ["Bash(node *)", "Bash(npx *)", "Bash(curl *)", "Bash(pnpm install *)", "Bash(pnpm exec *)", "Bash(git push *)"],
     "defaultMode": "auto"
   },
   "model": "opus",
@@ -100,17 +90,6 @@
           {
             "type": "command",
             "command": "$HOME/.claude/hooks/pr-guard.sh"
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "matcher": "startup|clear",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/morning-brief-nudge.sh"
           }
         ]
       }
