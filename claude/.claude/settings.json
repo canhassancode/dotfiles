@@ -55,6 +55,7 @@
     "defaultMode": "auto"
   },
   "model": "opus",
+  "disableBundledSkills": true,
   "hooks": {
     "PreToolUse": [
       {
@@ -88,14 +89,14 @@
       }
     ]
   },
+  "disableWorkflows": true,
+  "disableArtifact": true,
   "statusLine": {
     "type": "command",
     "command": "bash $HOME/.claude/statusline-command.sh"
   },
   "effortLevel": "medium",
-  "theme": "auto",
   "autoMemoryEnabled": false,
-  "disableBundledSkills": true,
-  "disableWorkflows": true,
-  "disableArtifact": true
+  "theme": "auto",
+  "tui": "fullscreen"
 }
