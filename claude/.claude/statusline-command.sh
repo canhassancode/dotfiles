@@ -1,22 +1,18 @@
 #!/usr/bin/env bash
 
-# Catppuccin Mocha palette (ANSI 24-bit colours)
-RED="\033[38;2;243;139;168m"
+# Catppuccin Mocha palette (ANSI 24-bit colours), each with a dimmed variant
 YELLOW="\033[38;2;249;226;175m"
-SAPPHIRE="\033[38;2;116;199;236m"
-OVERLAY0="\033[38;2;108;112;134m"
-OVERLAY1="\033[38;2;127;132;156m"
+YELLOW_DIM="\033[38;2;150;138;117m"
+PEACH="\033[38;2;250;179;135m"
+PEACH_DIM="\033[38;2;151;112;95m"
+RED="\033[38;2;243;139;168m"
+RED_DIM="\033[38;2;147;90;113m"
 RESET="\033[0m"
 
 input=$(cat)
 
-model=$(echo "$input" | jq -r '.model.display_name // empty')
 used_pct=$(echo "$input" | jq -r '.context_window.used_percentage // 0')
 total_in=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0')
-rate_5h=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // 0')
-rate_7d=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // 0')
-
-effort=$(jq -r '.effortLevel // empty' "$HOME/.claude/settings.json" 2>/dev/null)
 
 fmt_tokens() {
   local n="$1"
@@ -28,21 +24,16 @@ fmt_tokens() {
 }
 
 used_int=$(printf "%.0f" "$used_pct")
-if [ "$used_int" -gt 10 ]; then
+
+if [ "$total_in" -ge 150000 ] 2>/dev/null; then
   colour="$RED"
+  colour_dim="$RED_DIM"
+elif [ "$total_in" -ge 110000 ] 2>/dev/null; then
+  colour="$PEACH"
+  colour_dim="$PEACH_DIM"
 else
   colour="$YELLOW"
-fi
-printf "${colour}$(fmt_tokens "$total_in")${RESET} ${OVERLAY0}(${used_int}%%)${RESET}"
-
-if [ -n "$model" ]; then
-  if [ -n "$effort" ]; then
-    printf " ${OVERLAY0}•${RESET} ${SAPPHIRE}[ ${model} • ${effort} ]${RESET}"
-  else
-    printf " ${OVERLAY0}•${RESET} ${SAPPHIRE}[ ${model} ]${RESET}"
-  fi
+  colour_dim="$YELLOW_DIM"
 fi
 
-rate_5h_int=$(printf "%.0f" "$rate_5h")
-rate_7d_int=$(printf "%.0f" "$rate_7d")
-printf " ${OVERLAY0}•${RESET} ${OVERLAY1}[ s: ${rate_5h_int}%% • w: ${rate_7d_int}%% ]${RESET}"
+printf "${colour}$(fmt_tokens "$total_in")${RESET} ${colour_dim}(${used_int}%%)${RESET}"
