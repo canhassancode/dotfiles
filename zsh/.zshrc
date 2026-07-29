@@ -1,3 +1,5 @@
+export PATH="$HOME/.local/bin:$PATH"
+
 # Path to your Oh My Zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
 
@@ -33,4 +35,3 @@ fastfetch
 
 source $ZSH/oh-my-zsh.sh
 eval "$(starship init zsh)"
-export PATH="$HOME/.local/bin:$PATH"
