@@ -6,8 +6,11 @@ cmd=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
 
 # Every git verb that can author a message onto an object, not just `commit`.
 # `git merge -m` was the original escape hatch: it creates a commit and walks
-# past a `commit`-only matcher.
-printf '%s' "$cmd" | grep -Eq '\bgit[[:space:]]+(commit|merge|revert|cherry-pick|rebase|tag)\b' || exit 0
+# past a `commit`-only matcher. `git -c commit.gpgsign=false commit` was the
+# second: global flags sit between `git` and the subcommand, so the verb is not
+# in the slot a bare matcher looks at. Match on the subcommand instead, skipping
+# any leading global flags and their values.
+printf '%s' "$cmd" | grep -Eq '\bgit[[:space:]]+(((-c|-C|--git-dir|--work-tree|--namespace|--exec-path)[[:space:]]+[^[:space:]]+|-[^[:space:]]*)[[:space:]]+)*(commit|merge|revert|cherry-pick|rebase|tag)\b' || exit 0
 
 redirect() {
   echo "commit-guard: blocked — $1 Invoke the /commit skill and retry; it produces the required single-line conventional-commit format." >&2
