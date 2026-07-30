@@ -21,8 +21,16 @@ block() {
 
 # Secret-bearing paths: .env files, ssh/aws/gnupg dirs, private keys, credentials.
 # Leading/trailing classes include whitespace so it matches both file_path
-# arguments (/proj/.env) and shell tokens (cat .env.production).
-secret_re='(^|[[:space:]/])\.env($|[[:space:]./])|(^|[[:space:]/])\.netrc($|[[:space:]/])|(^|[[:space:]/])\.(ssh|aws|gnupg)/|\.pem($|[[:space:]])|\.p12($|[[:space:]])|\bid_rsa\b|\bid_ed25519\b|(^|[[:space:]/])credentials($|[[:space:]/.])'
+# arguments (/proj/.env) and shell tokens (cat .env.production). The credentials
+# alternative requires an adjacent / . or - so it names a file (.aws/credentials,
+# .git-credentials) rather than matching the bare English noun in prose the
+# command happens to carry.
+secret_re='(^|[[:space:]/])\.env($|[[:space:]./])|(^|[[:space:]/])\.netrc($|[[:space:]/])|(^|[[:space:]/])\.(ssh|aws|gnupg)/|\.pem($|[[:space:]])|\.p12($|[[:space:]])|\bid_rsa\b|\bid_ed25519\b|[/.-]credentials($|[[:space:]/.])'
+
+# .env.example and friends are committed placeholders naming variables and
+# holding no values. Stripping the occurrences rather than exempting the whole
+# string keeps `cat .env.example .env.production` blocking on the second file.
+scrub_placeholders() { sed 's/\.env\.\(example\|sample\|template\)//g'; }
 
 # Lockfiles — mutate via the package manager, never hand-edit.
 lock_re='(pnpm-lock\.yaml|package-lock\.json|yarn\.lock)$'
@@ -32,12 +40,12 @@ lock_re='(pnpm-lock\.yaml|package-lock\.json|yarn\.lock)$'
 destructive_re='\brm[[:space:]][^;&|]*(-[a-zA-Z]*[rR]|--recursive)|\bgit[[:space:]]+push[^;&|]*(--force|[[:space:]]-f([[:space:]]|$))|\bgit[[:space:]]+reset[[:space:]]+--hard|\bgit[[:space:]]+clean[[:space:]]+(-[a-zA-Z]*f|--force)|\bgit[[:space:]]+filter-branch|\bmkfs\b|\bdd[[:space:]]+if=|>[[:space:]]*/dev/sd|\bchmod[[:space:]]+-R[[:space:]]+777'
 
 if [ -n "$path" ]; then
-  printf '%s' "$path" | grep -Eq "$secret_re" && block "secret-bearing path: $path"
+  printf '%s' "$path" | scrub_placeholders | grep -Eq "$secret_re" && block "secret-bearing path: $path"
   printf '%s' "$path" | grep -Eq "$lock_re" && block "lockfile — edit via the package manager: $path"
 fi
 
 if [ -n "$cmd" ]; then
-  printf '%s' "$cmd" | grep -Eq "$secret_re" && block "command touches a secret-bearing path"
+  printf '%s' "$cmd" | scrub_placeholders | grep -Eq "$secret_re" && block "command touches a secret-bearing path"
   printf '%s' "$cmd" | grep -Eq "$destructive_re" && block "destructive command pattern"
 fi
 
