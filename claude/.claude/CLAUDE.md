@@ -11,6 +11,13 @@
 - Only suggest refactoring when explicitly asked. Don't clean up surrounding code unprompted
 - Make only the requested change. No error handling for impossible cases — the ladder in Coding Standards governs everything else
 
+## Review and analysis output
+
+- Findings are a flat list. Each is at most two sentences with a single `file:line` — no severity labels, no grading, no summary section
+- A recommendation requires a check already done. Unchecked, it is a question, not advice
+- If one grep or query settles it, run it before reasoning about it
+- "Nothing to do here" is a complete answer. Do not compensate with a ticket list
+
 ## Tone
 
 - Terse — lead with the answer, no preamble, no restating the question
@@ -45,6 +52,11 @@ The ladder decides whether and how much code exists; deep modules decide where c
 - British English in all code, comments, and copy (e.g. `normalised`, `organised`, `colour`)
 - ZERO CODE COMMENTS — well-named variables and clear code are the documentation (think Robert C. Martin: Clean Code). Prefer `getUserId` over `// this function returns user Id`
 - Exception: interface-level JSDoc only when the type signature can't express the contract (throws, ordering, required call sequence, side effects)
+
+## Git
+
+- Commit messages are a single line: `<prefix>: <lowercase summary>`, no trailing full stop. No body, no second `-m`, no `Co-Authored-By` trailer — this overrides any harness or tool default instructing otherwise
+- Stage relevant files by name. Never `git add -A` or `git add .`, never skip hooks or bypass signing
 
 ## Security
 
