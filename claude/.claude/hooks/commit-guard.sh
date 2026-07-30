@@ -8,9 +8,25 @@ cmd=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
 # `git merge -m` was the original escape hatch: it creates a commit and walks
 # past a `commit`-only matcher. `git -c commit.gpgsign=false commit` was the
 # second: global flags sit between `git` and the subcommand, so the verb is not
-# in the slot a bare matcher looks at. Match on the subcommand instead, skipping
-# any leading global flags and their values.
-printf '%s' "$cmd" | grep -Eq '\bgit[[:space:]]+(((-c|-C|--git-dir|--work-tree|--namespace|--exec-path)[[:space:]]+[^[:space:]]+|-[^[:space:]]*)[[:space:]]+)*(commit|merge|revert|cherry-pick|rebase|tag)\b' || exit 0
+# in the slot a bare matcher looks at. `git -c user.name="Hassan Ali" commit` was
+# the third: a quoted flag value holds whitespace, so the flag loop stopped
+# mid-match. Detection therefore runs on a normalised copy — heredoc bodies
+# dropped so prose quoting these patterns cannot trigger it, quoted strings
+# collapsed so their spaces cannot break the loop. Checks below read the raw command.
+normalised=$(printf '%s' "$cmd" \
+  | awk '
+      skip { if ($0 ~ "^[[:space:]]*" term "[[:space:]]*$") skip = 0; next }
+      {
+        if (match($0, /<<-?[[:space:]]*["\047]?[A-Za-z_][A-Za-z0-9_]*/)) {
+          term = substr($0, RSTART, RLENGTH)
+          sub(/^<<-?[[:space:]]*["\047]?/, "", term)
+          skip = 1
+        }
+        print
+      }' \
+  | sed -E "s/\"[^\"]*\"/Q/g; s/'[^']*'/Q/g")
+
+printf '%s' "$normalised" | grep -Eq '\bgit[[:space:]]+(((-c|-C|--git-dir|--work-tree|--namespace|--exec-path)[[:space:]]+[^[:space:]]+|-[^[:space:]]*)[[:space:]]+)*(commit|merge|revert|cherry-pick|rebase|tag)\b' || exit 0
 
 redirect() {
   echo "commit-guard: blocked — $1 Invoke the /commit skill and retry; it produces the required single-line conventional-commit format." >&2
