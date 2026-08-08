@@ -76,7 +76,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "opus",
+  "model": "claude-opus-4-8",
   "disableBundledSkills": true,
   "hooks": {
     "PreToolUse": [
