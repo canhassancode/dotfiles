@@ -17,7 +17,8 @@ total_in=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0')
 fmt_tokens() {
   local n="$1"
   if [ "$n" -ge 1000 ] 2>/dev/null; then
-    printf "%.1fk" "$(echo "$n / 1000" | bc -l)"
+    local tenths=$((n / 100))
+    printf "%d.%dk" "$((tenths / 10))" "$((tenths % 10))"
   else
     echo "$n"
   fi
