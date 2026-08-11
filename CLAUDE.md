@@ -9,6 +9,8 @@ This is a GNU Stow-managed dotfiles repo. Each top-level directory (e.g. `zsh/`,
 
 Archived packages live in `archived/` and are not stowed.
 
+**Exception — `claude` is flat and multi-target.** Its top level is the *contents* of a config dir (no `.claude/` wrapper), so it's stowed with an explicit target that names the dir: `stow -t ~/.claude claude` and `stow -t ~/.claude-work claude`. One source, two profiles. See `claude/README.md`.
+
 **When editing files here, you are editing the real file** — Stow's symlinks mean `~/.zshrc` *is* `~/dotfiles/zsh/.zshrc`. No copy step needed; changes take effect immediately. `stow` is idempotent and safe to re-run after pulling.
 
 See `README.md` for the full package table and bootstrap instructions.

@@ -21,6 +21,9 @@ if [ -f ~/.zsh_functions ]; then
     source ~/.zsh_functions
 fi
 
+# Work Claude Code profile: separate login/history/agents, shared config+skills
+claude-work() { CLAUDE_CONFIG_DIR="$HOME/.claude-work" command claude "$@"; }
+
 ##############
 #--EXPORTS--##
 ##############

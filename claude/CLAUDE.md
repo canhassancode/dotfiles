@@ -66,3 +66,9 @@ The ladder decides whether and how much code exists; deep modules decide where c
 - Validate all external input at system boundaries. Trust internal code
 - When touching auth flows, review the entire chain — don't patch in isolation
 - Default to least-privilege for IAM roles, API scopes, and database permissions
+
+## Profiles
+
+- `claude` → personal profile (`~/.claude`, personal login).
+- `claude-work` → work profile (`CLAUDE_CONFIG_DIR=~/.claude-work`, separate work-org login). Use it for work repos so work runs on the work seat, not the personal one.
+- Both share this config and skills (same dotfiles source); login, history, sessions, and the multi-agent view are separate per profile.

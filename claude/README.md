@@ -1,12 +1,22 @@
 # claude
 
-Global Claude Code configuration. Stows `claude/.claude/` → `~/.claude/`, which Claude Code reads on every session regardless of cwd.
+Global Claude Code configuration. The package is flat (its top level *is* the contents of a Claude config dir), so the same source stows into more than one target — enabling separate profiles that share config.
 
 ## Install
 
+Stow the package into each profile's config dir (target chooses the dir name):
+
 ```sh
-cd ~/dotfiles && stow claude
+cd ~/dotfiles
+stow -t ~/.claude      claude   # personal profile
+stow -t ~/.claude-work claude   # work profile
 ```
+
+## Profiles
+
+`claude` uses `~/.claude`; the `claude-work` shell function (see `zsh/.zshrc`) sets `CLAUDE_CONFIG_DIR=~/.claude-work`. Both share this config; login, history, sessions, and the multi-agent view are separate per profile — that state is runtime data Claude writes into each dir, never part of this package.
+
+Skills are not stowed: the real store is `~/.agents/skills` (via `npx skills add`). Personal links it per-skill under `~/.claude/skills`; work links the whole dir (`~/.claude-work/skills -> ~/.agents/skills`), so both profiles see every skill.
 
 ## Layout
 
