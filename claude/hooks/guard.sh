@@ -74,7 +74,7 @@ curl_write_re='\bcurl\b[^;&|]*([[:space:]]-X[[:space:]]*(POST|PUT|DELETE|PATCH)|
 # push.default=upstream. Resolution failure fails OPEN (the ref check still stands).
 push_hits_protected_branch() {
   local cmd="$1" target
-  printf '%s' "$cmd" | grep -Eq '\bgit[[:space:]]+push\b[^;&|]*([[:space:]]|:)(main|master)([[:space:]]|:|$)' && return 0
+  printf '%s' "$cmd" | grep -Eq '(^|[;&|(]|&&|\|\|)[[:space:]]*(sudo[[:space:]]+)?git[[:space:]]+push\b[^;&|]*([[:space:]]|:)(main|master)([[:space:]]|:|$)' && return 0
   target=$(git rev-parse --abbrev-ref --symbolic-full-name '@{push}' 2>/dev/null)
   [ -n "$target" ] && printf '%s' "$target" | grep -Eq '(^|/)(main|master)$' && return 0
   return 1

@@ -104,6 +104,8 @@ run_cmd_norepo "deleting main blocks" 2 'git push origin :main'
 run_cmd_norepo "push to a feature branch passes" 0 'git push origin feature-x'
 run_cmd_norepo "feature/main branch name is not main" 0 'git push origin feature/main'
 run_cmd_norepo "prose mentioning git push main passes" 0 'echo "never git push origin main directly"'
+run_cmd_norepo "feature push beside a body quoting git push main passes" 0 'git push -u origin fix/x | tail -3
+gh pr create --body "blocks git push origin main"'
 
 # Arm B — the CAR-888 shape: a bare `git push` from a branch whose resolved push
 # target is main (push.default=upstream + upstream=origin/main). The command names
