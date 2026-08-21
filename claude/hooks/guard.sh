@@ -54,13 +54,31 @@ lock_re='(pnpm-lock\.yaml|package-lock\.json|yarn\.lock)$'
 
 # Destructive shell, matched within a single command segment ([^;&|]* stops the
 # match leaking across separators into an unrelated command).
-destructive_re='\brm[[:space:]][^;&|]*(-[a-zA-Z]*[rR]|--recursive)|\bgit[[:space:]]+push[^;&|]*(--force|[[:space:]]-f([[:space:]]|$))|\bgit[[:space:]]+reset[[:space:]]+--hard|\bgit[[:space:]]+clean[[:space:]]+(-[a-zA-Z]*f|--force)|\bgit[[:space:]]+filter-branch|\bmkfs\b|\bdd[[:space:]]+if=|>[[:space:]]*/dev/sd|\bchmod[[:space:]]+-R[[:space:]]+777'
+# The rm clause anchors to command position (^, a separator, or a sudo/xargs/-exec
+# wrapper) so a quoted `rm -rf` inside prose passes while a real invocation blocks.
+# Accepted trade-off: an unlisted wrapper (time rm -rf) slips.
+destructive_re='((^|[;&|(]|&&|\|\|)[[:space:]]*((sudo|xargs)[[:space:]]+)*|-exec[[:space:]]+)rm[[:space:]][^;&|]*(-[a-zA-Z]*[rR]|--recursive)|\bgit[[:space:]]+push[^;&|]*(--force|[[:space:]]-f([[:space:]]|$))|\bgit[[:space:]]+reset[[:space:]]+--hard|\bgit[[:space:]]+clean[[:space:]]+(-[a-zA-Z]*f|--force)|\bgit[[:space:]]+filter-branch|\bmkfs\b|\bdd[[:space:]]+if=|>[[:space:]]*/dev/sd|\bchmod[[:space:]]+-R[[:space:]]+777'
 
 # curl that writes rather than reads. A permission rule cannot express this:
 # the flags arrive in any order, so any prefix broad enough to match curl -s,
 # -sL, -sS and -sI also matches curl -s -X POST. The hook sees the whole
 # command, so the distinction lives here and curl itself can be allowed.
 curl_write_re='\bcurl\b[^;&|]*([[:space:]]-X[[:space:]]*(POST|PUT|DELETE|PATCH)|[[:space:]]--data|[[:space:]]-d[[:space:]]|[[:space:]]-F[[:space:]]|[[:space:]]-T[[:space:]]|--upload-file)'
+
+# A push landing on main/master. This lives in the Claude-Code guard layer, not a
+# git pre-push hook, deliberately: it fires on tool calls only, so it denies the
+# agent while leaving Hassan's own terminal free to push when he means to. Two
+# independent triggers: (a) the command names main/master as its destination ref;
+# (b) the current branch's resolved push target is */main or */master — the CAR-888
+# case where an innocent-looking `git push -u origin <branch>` resolves to main via
+# push.default=upstream. Resolution failure fails OPEN (the ref check still stands).
+push_hits_protected_branch() {
+  local cmd="$1" target
+  printf '%s' "$cmd" | grep -Eq '\bgit[[:space:]]+push\b[^;&|]*([[:space:]]|:)(main|master)([[:space:]]|:|$)' && return 0
+  target=$(git rev-parse --abbrev-ref --symbolic-full-name '@{push}' 2>/dev/null)
+  [ -n "$target" ] && printf '%s' "$target" | grep -Eq '(^|/)(main|master)$' && return 0
+  return 1
+}
 
 if [ -n "$path" ]; then
   printf '%s' "$path" | scrub_placeholders | grep -Eq "$secret_re" && block "secret-bearing path: $path"
@@ -70,6 +88,8 @@ fi
 if [ -n "$cmd" ]; then
   printf '%s' "$cmd" | scrub_placeholders | grep -Eq "$secret_re" && block "command touches a secret-bearing path"
   printf '%s' "$cmd" | grep -Eq "$destructive_re" && block "destructive command pattern"
+  printf '%s' "$cmd" | grep -Eq '(^|[;&|(]|&&|\|\|)[[:space:]]*(sudo[[:space:]]+)?git[[:space:]]+push\b' && push_hits_protected_branch "$cmd" \
+    && block "git push landing on main/master — open a PR. Run it yourself if you truly mean to; this guard denies the agent only."
   printf '%s' "$cmd" | grep -Eq "$curl_write_re" && ask "this curl sends a request body rather than reading. Read-only curl runs unprompted; approve only if the write is intended."
 fi
 
