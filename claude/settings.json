@@ -39,6 +39,8 @@
       "Bash(pnpm test:*)",
       "Bash(pnpm lint:*)",
       "Bash(pnpm type-check:*)",
+      "Bash(npx playwright:*)",
+      "Bash(pnpm exec playwright:*)",
       "Bash(npm run:*)",
       "Bash(npm test:*)",
       "Bash(go run:*)",
