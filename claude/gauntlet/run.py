@@ -36,8 +36,17 @@ answer below 500, puts a counting relay in front of serve.url, runs the QA stage
 .gauntlet/qa/<nonce>.sh with GAUNTLET_URL set to the relay, and reads its `PASS <criterion>`
 / `FAIL <criterion>` lines: any FAIL (or none of either) is exit 1, zero requests through
 the relay is exit 1 (the script proved nothing against the served system), a server that
-never answers is exit 2, no serve in config is exit 0 with "skipped". The server is always
-stopped. Adds {"passed", "failed", "requests"} or {"skipped"}.
+never answers is exit 2, a port that already has a listener is exit 2 without starting
+serve.run (an orphaned server would otherwise be judged as the product), no serve in config
+is exit 0 with "skipped". The server is always stopped. Adds {"passed", "failed",
+"requests"} or {"skipped"}.
+
+`qa-dry <nonce>` is the QA stage's own calibration run of the same script: identical to
+`qa` but adds {"output"} — the script's full stdout and stderr — prints no receipt, and is
+capped at 3 per nonce (the 4th is exit 2). A harness that has never been seen to run is as
+untrustworthy as a test that has never been seen to fail; the guard still serves fresh and
+runs the script itself, so the dry-run can calibrate the instrument but never supply the
+verdict.
 
 `verdict <nonce>` writes .gauntlet/verdict-<HEAD>.json = {"sha", "clean": true, "source":
 "gauntlet"} — the artefact the pre-PR hook requires. The workflow mints it only after
@@ -60,7 +69,9 @@ import subprocess
 import sys
 import threading
 import time
+import socket
 import urllib.error
+import urllib.parse
 import urllib.request
 from fnmatch import fnmatch
 from pathlib import Path
@@ -345,6 +356,7 @@ def depth_guard(root: Path, config: dict) -> dict:
 
 QA_LINE = re.compile(r"^(PASS|FAIL)\s+(.+?)\s*$", re.MULTILINE)
 SERVE_TIMEOUT = 60
+DRY_RUN_CAP = 3
 
 
 def wait_for(url: str, timeout: float) -> bool:
@@ -423,13 +435,29 @@ class RelayHandler(http.server.BaseHTTPRequestHandler):
     do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = do_HEAD = do_OPTIONS = relay
 
 
-def qa_guard(root: Path, config: dict, nonce: str, log: Path) -> dict:
+def listener_on(port: int) -> bool:
+    with socket.socket() as sock:
+        sock.settimeout(0.2)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def listeners(port: int) -> str:
+    probe = subprocess.run(["ss", "-ltnp", f"sport = :{port}"], capture_output=True, text=True)
+    return probe.stdout.strip()
+
+
+def qa_guard(root: Path, config: dict, nonce: str, log: Path, full_output: bool = False) -> dict:
     serve = config.get("serve")
     if not serve:
         return {"exitCode": 0, "skipped": True, "tail": "no serve in config — QA skipped"}
     script = root / ".gauntlet" / "qa" / f"{nonce}.sh"
     if not script.exists():
         return {"exitCode": 2, "tail": f"no QA script at {script.relative_to(root)}"}
+    port = urllib.parse.urlparse(serve["url"]).port
+    if port and listener_on(port):
+        message = f"environment: 127.0.0.1:{port} already has a listener, so serve.run was not started — stop it (an orphaned dev server from an earlier run?) and re-enter:\n{listeners(port)}"
+        log.write_text(message)
+        return {"exitCode": 2, "tail": message}
     with log.open("w") as sink:
         sink.write(f"$ {serve['run']}\n")
         sink.flush()
@@ -457,11 +485,20 @@ def qa_guard(root: Path, config: dict, nonce: str, log: Path) -> dict:
     failed = [criterion for status, criterion in verdicts if status == "FAIL"]
     output = (run.stdout + run.stderr)[-TAIL_CHARS:]
     result = {"passed": passed, "failed": failed, "requests": relay.requests}
+    if full_output:
+        result["output"] = run.stdout + run.stderr
     if not verdicts:
         return {**result, "exitCode": 1, "tail": "QA script printed no PASS/FAIL lines:\n" + output}
     if relay.requests == 0:
         return {**result, "exitCode": 1, "tail": "QA made 0 requests to the served system through GAUNTLET_URL — the script proved nothing from the outside:\n" + output}
     return {**result, "exitCode": 1 if failed else 0, "tail": output}
+
+
+def qa_dry_guard(root: Path, config: dict, nonce: str, runs: Path) -> dict:
+    taken = len(list(runs.glob(f"{nonce}-dry-*.log")))
+    if taken >= DRY_RUN_CAP:
+        return {"exitCode": 2, "dry": True, "tail": f"dry-run cap of {DRY_RUN_CAP} reached for {nonce} — return with the script as it stands"}
+    return {**qa_guard(root, config, nonce, runs / f"{nonce}-dry-{taken + 1}.log", full_output=True), "dry": True}
 
 
 def resolve(guard: str, root: Path, config: dict) -> tuple[str | None, str | None]:
@@ -525,6 +562,10 @@ def guard_result(guard: str, nonce: str, argument: str | None, root: Path, confi
 
     if guard == "qa":
         result.update(qa_guard(root, config, nonce, runs / f"{nonce}.log"))
+        return result
+
+    if guard == "qa-dry":
+        result.update(qa_dry_guard(root, config, nonce, runs))
         return result
 
     command, inline = resolve(guard, root, config)
@@ -607,7 +648,8 @@ def receipt(secret: str, nonce: str, exit_code: int, head: str | None = None) ->
 
 
 def emit(result: dict, secret: str) -> int:
-    result["receipt"] = receipt(secret, result["nonce"], result["exitCode"], result.get("head"))
+    if not result.pop("dry", False):
+        result["receipt"] = receipt(secret, result["nonce"], result["exitCode"], result.get("head"))
     print(json.dumps(result))
     return 0
 

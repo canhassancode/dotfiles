@@ -280,7 +280,7 @@ try {
       phase("QA");
       if (exhausted("qa")) { outcome = escalate("qa: exhausted", null, { feedback }); break; }
       const nonce = mintNonce("qa");
-      await stage("qa", `Prove each acceptance criterion of this ticket against the running system from the outside. Write a bash script to .gauntlet/qa/${nonce}.sh that uses $GAUNTLET_URL, drives the served system, and prints exactly one line per criterion: "PASS <criterion verbatim>" or "FAIL <criterion verbatim>". Every request must go through $GAUNTLET_URL — the guard counts them, and a script that makes none is red. Do not read or run the repo's tests. Do not run the script yourself.`, feedback);
+      await stage("qa", `Prove each acceptance criterion of this ticket against the running system from the outside. Write a bash script to .gauntlet/qa/${nonce}.sh that uses $GAUNTLET_URL, drives the served system, and prints exactly one line per criterion: "PASS <criterion verbatim>" or "FAIL <criterion verbatim>". Every request must go through $GAUNTLET_URL — the guard counts them, and a script that makes none is red. Do not read or run the repo's tests. Calibrate the script with python3 ${RUNNER} qa-dry ${nonce} (free, at most three) until every criterion prints a verdict you can explain, then return.`, feedback);
       const qa = await operational("qa", { nonce, label: "qa-guard" });
       if (qa.gate) { outcome = qa.gate.outcome; break; }
       if (qa.result.exitCode !== 0) {

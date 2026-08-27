@@ -2,6 +2,7 @@
 """Run: python3 run.test.py   Exit 0 when every case passes. No network: `gh` is faked on PATH."""
 
 import contextlib
+import glob
 import importlib.util
 import io
 import json
@@ -9,6 +10,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 _here = os.path.dirname(os.path.abspath(__file__))
@@ -296,6 +298,66 @@ class QaGuardTests(unittest.TestCase):
         self.assertEqual(result["exitCode"], 1)
         self.assertEqual(result["requests"], 0)
         self.assertIn("0 requests to the served system", result["tail"])
+
+    def test_dry_run_returns_full_output_and_verdicts_without_a_receipt(self):
+        port = free_port()
+        script = 'curl -sf "$GAUNTLET_URL" >/dev/null && echo "PASS Given the server, when fetched, then it answers"\necho "harness detail" >&2\n'
+        with QaRepo(script, http_serve(port)) as repo:
+            result = invoke("qa-dry", "n1")
+            verdicts = glob.glob(os.path.join(repo.root, ".gauntlet", "verdict-*.json"))
+            still_open = port_is_open(port)
+        self.assertEqual(result["exitCode"], 0, result)
+        self.assertEqual(result["passed"], ["Given the server, when fetched, then it answers"])
+        self.assertEqual(result["requests"], 1)
+        self.assertIn("harness detail", result["output"])
+        self.assertNotIn("receipt", result)
+        self.assertEqual(verdicts, [])
+        self.assertFalse(still_open)
+
+    def test_dry_run_is_capped_at_three_per_nonce(self):
+        port = free_port()
+        script = 'curl -s "$GAUNTLET_URL" >/dev/null; echo "PASS Given a, when b, then c"\n'
+        with QaRepo(script, http_serve(port)) as repo:
+            for _ in range(3):
+                self.assertEqual(invoke("qa-dry", "n1")["exitCode"], 0)
+            started = time.monotonic()
+            fourth = invoke("qa-dry", "n1")
+            elapsed = time.monotonic() - started
+            dry_logs = glob.glob(os.path.join(repo.root, ".gauntlet", "runs", "n1-dry-*.log"))
+        self.assertEqual(fourth["exitCode"], 2)
+        self.assertIn("3", fourth["tail"])
+        self.assertLess(elapsed, 1)
+        self.assertEqual(len(dry_logs), 3)
+
+    def test_existing_listener_on_the_served_port_is_an_environment_failure(self):
+        port = free_port()
+        squatter = subprocess.Popen(["python3", "-m", "http.server", str(port), "--bind", "127.0.0.1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            deadline = time.monotonic() + 5
+            while not port_is_open(port) and time.monotonic() < deadline:
+                time.sleep(0.1)
+            serve = {"run": "sleep 30", "url": f"http://127.0.0.1:{port}/", "timeout": 5}
+            with QaRepo('echo "PASS never reached"\n', serve) as repo:
+                result = invoke("qa", "n1")
+                log = open(os.path.join(repo.root, ".gauntlet", "runs", "n1.log")).read()
+        finally:
+            squatter.kill()
+            squatter.wait()
+        self.assertEqual(result["exitCode"], 2)
+        self.assertIn(str(port), result["tail"])
+        self.assertIn("listener", result["tail"])
+        self.assertNotIn("sleep 30", log)
+
+    def test_guard_verdict_comes_from_its_own_run_after_a_dry_run(self):
+        port = free_port()
+        script = 'curl -s "$GAUNTLET_URL" >/dev/null; echo run >> .gauntlet/executions; echo "PASS Given a, when b, then c"\n'
+        with QaRepo(script, http_serve(port)) as repo:
+            invoke("qa-dry", "n1")
+            result = invoke("qa", "n1")
+            executions = open(os.path.join(repo.root, ".gauntlet", "executions")).read().count("run")
+        self.assertEqual(result["exitCode"], 0)
+        self.assertEqual(result["receipt"], receipt_for("n1", 0))
+        self.assertEqual(executions, 2)
 
     def test_relay_forwards_status_headers_body_and_does_not_follow_redirects(self):
         port = free_port()

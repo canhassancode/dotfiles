@@ -30,6 +30,8 @@ QA is the only stage that shares no assumptions with the stages that wrote the c
 | `serve.url` | `qa` guard | The served system. The QA script never sees it directly: the guard fronts it with a counting relay and hands the relay to the script as `GAUNTLET_URL`; zero requests through it is red (**wire evidence** — the one proof of "against the running system" a stage cannot author) |
 | `serve.ready` | `qa` guard | Polled until it answers below 500; defaults to `serve.url`. Point it at the deepest dependency (an API `/health` that checks the database), not the front door |
 | `serve.timeout` | `qa` guard | Seconds to wait for `ready` |
+
+The QA stage calibrates its script with `run.py qa-dry <nonce>` before the guard judges it: same server, same relay, plus the script's full output, no receipt, three per nonce. The guard then serves fresh and runs the script itself. A port that already has a listener when the guard starts is an environment failure (exit 2, `serve.run` not started) — an orphaned dev server would otherwise be judged as the product.
 | `protectedPaths` | ask-gate hook | Measurement apparatus and infra a stage may only edit with a human's approval |
 
 `serve` absent → QA skipped. `.gauntlet/` is gitignored globally; the config is per machine.
