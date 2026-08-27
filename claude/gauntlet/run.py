@@ -31,15 +31,20 @@ stray test in the same files): `red` = every criterion test fails on the untouch
 `green` = every one passes. Mocking a module under sourcePaths in an acceptance file is
 exit 1. Adds {"criteria", "tests", "problems"}.
 
-`qa <nonce>` starts config.serve.run, waits for config.serve.ready (default serve.url) to
-answer below 500, puts a counting relay in front of serve.url, runs the QA stage's
-.gauntlet/qa/<nonce>.sh with GAUNTLET_URL set to the relay, and reads its `PASS <criterion>`
-/ `FAIL <criterion>` lines: any FAIL (or none of either) is exit 1, zero requests through
-the relay is exit 1 (the script proved nothing against the served system), a server that
-never answers is exit 2, a port that already has a listener is exit 2 without starting
-serve.run (an orphaned server would otherwise be judged as the product), no serve in config
-is exit 0 with "skipped". The server is always stopped. Adds {"passed", "failed",
-"requests"} or {"skipped"}.
+`qa <nonce>` runs four phases: start config.serve.run; wait inside the serve.startup window
+until every serve.ready probe answers its expected status serve.successes times in a row
+(a bare string probe expects anything below 500; default probe is serve.url); send each
+serve.warmup request once, in order, straight to serve.url (statuses logged, never judged);
+then put a counting relay in front of serve.url, run the QA stage's .gauntlet/qa/<nonce>.sh
+with GAUNTLET_URL set to the relay, and read its `PASS <criterion>` / `FAIL <criterion>`
+lines. Only the last phase can be exit 1: any FAIL (or none of either), or zero requests
+through the relay (the script proved nothing against the served system). The first three
+are environment: a probe that never becomes ready or a warm-up that never answers is exit 2,
+a port that already has a listener is exit 2 without starting serve.run (an orphaned server
+would otherwise be judged as the product). The relay never retries; its own failures are
+status 599 with an X-Gauntlet-Relay-Error header so they cannot read as the product's. No
+serve in config is exit 0 with "skipped". The server is always stopped. Adds {"passed",
+"failed", "requests"} or {"skipped"}.
 
 `qa-dry <nonce>` is the QA stage's own calibration run of the same script: identical to
 `qa` but adds {"output"} — the script's full stdout and stderr — prints no receipt, and is
@@ -359,20 +364,93 @@ SERVE_TIMEOUT = 60
 DRY_RUN_CAP = 3
 
 
-def wait_for(url: str, timeout: float) -> bool:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
+READY_PROBE_TIMEOUT = 15
+READY_INTERVAL = 1
+READY_SUCCESSES = 2
+WARMUP_TIMEOUT = 90
+RELAY_ERROR_STATUS = 599
+RELAY_ERROR_HEADER = "X-Gauntlet-Relay-Error"
+UPSTREAM_TIMEOUT = 60
+
+
+def ready_probes(serve: dict) -> list[dict]:
+    declared = serve.get("ready", serve["url"])
+    probes = declared if isinstance(declared, list) else [declared]
+    return [normalise_probe(probe) for probe in probes]
+
+
+def normalise_probe(probe: str | dict) -> dict:
+    if isinstance(probe, str):
+        return {"url": probe, "expect": None, "timeout": READY_PROBE_TIMEOUT}
+    expect = probe.get("expect", 200)
+    return {"url": probe["url"], "expect": [expect] if isinstance(expect, int) else list(expect), "timeout": float(probe.get("timeout", READY_PROBE_TIMEOUT))}
+
+
+def probe_status(probe: dict) -> int | None:
+    try:
+        with urllib.request.urlopen(probe["url"], timeout=probe["timeout"]) as response:
+            return response.status
+    except urllib.error.HTTPError as response:
+        response.close()
+        return response.code
+    except (urllib.error.URLError, OSError):
+        return None
+
+
+def probe_matches(probe: dict, status: int | None) -> bool:
+    if status is None:
+        return False
+    if probe["expect"] is None:
+        return status < 500
+    return status in probe["expect"]
+
+
+def describe_probe(probe: dict) -> str:
+    expected = "below 500" if probe["expect"] is None else "/".join(str(code) for code in probe["expect"])
+    return f"{probe['url']} expecting {expected}"
+
+
+def wait_for_ready(serve: dict) -> list[str]:
+    probes = ready_probes(serve)
+    startup = float(serve.get("startup", serve.get("timeout", SERVE_TIMEOUT)))
+    interval = float(serve.get("interval", READY_INTERVAL))
+    successes = int(serve.get("successes", READY_SUCCESSES))
+    streaks = [0] * len(probes)
+    deadline = time.monotonic() + startup
+    while True:
+        for index, probe in enumerate(probes):
+            if streaks[index] >= successes:
+                continue
+            streaks[index] = streaks[index] + 1 if probe_matches(probe, probe_status(probe)) else 0
+        if all(streak >= successes for streak in streaks):
+            return []
+        if time.monotonic() >= deadline:
+            return [f"{describe_probe(probe)} ({streaks[index]}/{successes} consecutive)" for index, probe in enumerate(probes) if streaks[index] < successes]
+        time.sleep(interval)
+
+
+def warm_up(serve: dict, sink) -> str | None:
+    base = serve["url"].rstrip("/")
+    for item in serve.get("warmup", []):
+        if isinstance(item, str):
+            method, _, path = item.partition(" ")
+            item = {"method": method, "path": path}
+        method = item.get("method", "GET").upper()
+        path = item["path"]
+        body = item["body"].encode() if "body" in item else None
+        headers = {"Content-Type": "application/json"} if body else {}
+        request = urllib.request.Request(base + path, data=body, method=method, headers=headers)
         try:
-            urllib.request.urlopen(url, timeout=1).close()
-            return True
+            with urllib.request.build_opener(NoRedirect).open(request, timeout=float(item.get("timeout", WARMUP_TIMEOUT))) as response:
+                status = response.status
         except urllib.error.HTTPError as response:
+            status = response.code
             response.close()
-            if response.code < 500:
-                return True
-            time.sleep(0.2)
-        except (urllib.error.URLError, OSError):
-            time.sleep(0.2)
-    return False
+        except (urllib.error.URLError, OSError) as error:
+            return f"warm-up {method} {path} did not answer: {error}"
+        sink.write(f"[warmup] {method} {path} -> {status}\n")
+        sink.flush()
+    return None
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -386,9 +464,10 @@ HOP_BY_HOP = {"connection", "keep-alive", "transfer-encoding", "content-length",
 class WireEvidence(http.server.ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, upstream: str):
+    def __init__(self, upstream: str, upstream_timeout: float = UPSTREAM_TIMEOUT):
         super().__init__(("127.0.0.1", 0), RelayHandler)
         self.upstream = upstream.rstrip("/")
+        self.upstream_timeout = upstream_timeout
         self.requests = 0
         self.lock = threading.Lock()
 
@@ -412,22 +491,31 @@ class RelayHandler(http.server.BaseHTTPRequestHandler):
         headers = {name: value for name, value in self.headers.items() if name.lower() not in HOP_BY_HOP}
         request = urllib.request.Request(server.upstream + self.path, data=body, method=self.command, headers=headers)
         try:
-            response = urllib.request.build_opener(NoRedirect).open(request, timeout=60)
+            response = urllib.request.build_opener(NoRedirect).open(request, timeout=server.upstream_timeout)
         except urllib.error.HTTPError as error:
             response = error
         except (urllib.error.URLError, OSError) as error:
-            payload = f"gauntlet relay: upstream {server.upstream} unreachable: {error}".encode()
-            self.send_response(502)
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
+            self.relay_error("upstream did not answer", f"{server.upstream}: {error}")
             return
-        payload = response.read()
-        response.close()
+        try:
+            payload = response.read()
+        except (urllib.error.URLError, OSError) as error:
+            self.relay_error("upstream broke off mid-response", f"{server.upstream}: {error}")
+            return
+        finally:
+            response.close()
         self.send_response(response.status)
         for name, value in response.headers.items():
             if name.lower() not in HOP_BY_HOP:
                 self.send_header(name, value)
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def relay_error(self, kind: str, detail: str) -> None:
+        payload = f"gauntlet relay: {kind} — {detail}".encode()
+        self.send_response(RELAY_ERROR_STATUS)
+        self.send_header(RELAY_ERROR_HEADER, kind)
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)
@@ -462,12 +550,16 @@ def qa_guard(root: Path, config: dict, nonce: str, log: Path, full_output: bool 
         sink.write(f"$ {serve['run']}\n")
         sink.flush()
         server = subprocess.Popen(["bash", "-c", serve["run"]], cwd=root, stdout=sink, stderr=subprocess.STDOUT, start_new_session=True)
-        relay = WireEvidence(serve["url"])
+        relay = WireEvidence(serve["url"], float(serve.get("upstreamTimeout", UPSTREAM_TIMEOUT)))
         threading.Thread(target=relay.serve_forever, daemon=True).start()
         try:
-            ready_url = serve.get("ready", serve["url"])
-            if not wait_for(ready_url, float(serve.get("timeout", SERVE_TIMEOUT))):
-                return {"exitCode": 2, "tail": f"{ready_url} did not answer below 500 within {serve.get('timeout', SERVE_TIMEOUT)}s:\n" + log.read_text()[-TAIL_CHARS:]}
+            unready = wait_for_ready(serve)
+            if unready:
+                startup = serve.get("startup", serve.get("timeout", SERVE_TIMEOUT))
+                return {"exitCode": 2, "tail": f"environment: not ready within the {startup}s startup window — " + "; ".join(unready) + ":\n" + log.read_text()[-TAIL_CHARS:]}
+            warmup_failure = warm_up(serve, sink)
+            if warmup_failure:
+                return {"exitCode": 2, "tail": f"environment: {warmup_failure}:\n" + log.read_text()[-TAIL_CHARS:]}
             sink.write(f"$ GAUNTLET_URL={relay.url} bash {script.relative_to(root)}\n")
             sink.flush()
             run = subprocess.run(["bash", str(script)], cwd=root, capture_output=True, text=True, env={**os.environ, "GAUNTLET_URL": relay.url})

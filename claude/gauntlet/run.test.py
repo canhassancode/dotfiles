@@ -374,6 +374,137 @@ body=$(curl -s -X POST -d 'hello' -w ' %{http_code}' "$GAUNTLET_URL/post"); [ "$
         self.assertEqual(result["exitCode"], 0)
         self.assertEqual(result["requests"], 4)
 
+def scripted_server(port: int, handler: str, **serve) -> dict:
+    source = "import http.server\nclass H(http.server.BaseHTTPRequestHandler):\n  protocol_version = 'HTTP/1.1'\n  def log_message(self, *a): pass\n  def reply(self, status):\n    self.send_response(status); self.send_header('Content-Length', '0'); self.end_headers()\n" + handler + f"\nhttp.server.HTTPServer(('127.0.0.1', {port}), H).serve_forever()\n"
+    return {"run": f"python3 -c \"{source}\"", "url": f"http://127.0.0.1:{port}/", "startup": 15, "interval": 0.2, **serve}
+
+
+SEQUENCE_HANDLER = "  seen = {}\n  def do_GET(self):\n    n = H.seen.get(self.path, 0); H.seen[self.path] = n + 1\n    codes = [int(c) for c in self.path.strip('/').split('-')]\n    self.reply(codes[min(n, len(codes) - 1)])\n  do_POST = do_GET\n"
+PASS_SCRIPT = 'curl -s "$GAUNTLET_URL" >/dev/null; echo "PASS Given the server, when fetched, then it answers"\n'
+
+
+class ReadinessTests(unittest.TestCase):
+    def test_probe_stuck_outside_its_expected_status_is_named_and_the_script_never_runs(self):
+        port = free_port()
+        serve = scripted_server(port, SEQUENCE_HANDLER, startup=2, ready=[{"url": f"http://127.0.0.1:{port}/200"}, {"url": f"http://127.0.0.1:{port}/404", "expect": 401}])
+        with QaRepo(PASS_SCRIPT, serve):
+            result = invoke("qa", "n1")
+        self.assertEqual(result["exitCode"], 2)
+        self.assertIn("/404 expecting 401", result["tail"])
+        self.assertNotIn("/200 expecting", result["tail"])
+        self.assertNotIn("passed", result)
+
+    def test_probe_slower_than_a_second_but_inside_its_timeout_counts(self):
+        port = free_port()
+        handler = "  def do_GET(self):\n    import time; time.sleep(1.5); self.reply(200)\n"
+        serve = scripted_server(port, handler, ready=[{"url": f"http://127.0.0.1:{port}/", "timeout": 5}], successes=1)
+        with QaRepo(PASS_SCRIPT, serve):
+            result = invoke("qa", "n1")
+        self.assertEqual(result["exitCode"], 0, result)
+
+    def test_only_the_expected_status_counts_towards_readiness(self):
+        port = free_port()
+        serve = scripted_server(port, SEQUENCE_HANDLER, ready=[{"url": f"http://127.0.0.1:{port}/404-404-401", "expect": 401}], successes=1)
+        with QaRepo(PASS_SCRIPT, serve):
+            result = invoke("qa", "n1")
+        self.assertEqual(result["exitCode"], 0, result)
+
+    def test_consecutive_successes_are_required(self):
+        port = free_port()
+        flapping = scripted_server(port, SEQUENCE_HANDLER, startup=2, ready=[{"url": f"http://127.0.0.1:{port}/200-500-200-500-200-500-200-500-200-500-200-500"}], successes=2)
+        with QaRepo(PASS_SCRIPT, flapping):
+            flapping_result = invoke("qa", "n1")
+        port = free_port()
+        settling = scripted_server(port, SEQUENCE_HANDLER, ready=[{"url": f"http://127.0.0.1:{port}/200-500-200-200"}], successes=2)
+        with QaRepo(PASS_SCRIPT, settling):
+            settling_result = invoke("qa", "n1")
+        self.assertEqual(flapping_result["exitCode"], 2)
+        self.assertRegex(flapping_result["tail"], r"[01]/2 consecutive")
+        self.assertEqual(settling_result["exitCode"], 0, settling_result)
+
+    def test_startup_window_elapsing_names_the_window_and_the_unready_probes(self):
+        port = free_port()
+        serve = scripted_server(port, SEQUENCE_HANDLER, startup=1, ready=[{"url": f"http://127.0.0.1:{port}/503"}])
+        with QaRepo(PASS_SCRIPT, serve):
+            result = invoke("qa", "n1")
+        self.assertEqual(result["exitCode"], 2)
+        self.assertIn("1s startup window", result["tail"])
+        self.assertIn("/503 expecting 200", result["tail"])
+
+    def test_warmup_runs_once_in_order_off_relay_and_no_status_fails_the_run(self):
+        port = free_port()
+        handler = "  def do_GET(self):\n    open('hits.log', 'a').write('GET ' + self.path + '\\n'); self.reply(200)\n  def do_POST(self):\n    open('hits.log', 'a').write('POST ' + self.path + '\\n'); self.reply(500)\n"
+        serve = scripted_server(port, handler, ready=[{"url": f"http://127.0.0.1:{port}/ready"}], successes=1, warmup=["POST /login", {"method": "GET", "path": "/me"}])
+        with QaRepo(PASS_SCRIPT, serve) as repo:
+            result = invoke("qa", "n1")
+            with open(os.path.join(repo.root, "hits.log")) as f:
+                hits = f.read().splitlines()
+            with open(os.path.join(repo.root, ".gauntlet", "runs", "n1.log")) as f:
+                log = f.read()
+        self.assertEqual(result["exitCode"], 0, result)
+        self.assertEqual(result["requests"], 1)
+        self.assertEqual(hits[-3:], ["POST /login", "GET /me", "GET /"])
+        self.assertIn("[warmup] POST /login -> 500", log)
+        self.assertIn("[warmup] GET /me -> 200", log)
+
+    def test_warmup_that_never_answers_is_operational(self):
+        port = free_port()
+        handler = "  def do_GET(self):\n    if self.path == '/slow': import time; time.sleep(3)\n    self.reply(200)\n"
+        serve = scripted_server(port, handler, ready=[{"url": f"http://127.0.0.1:{port}/"}], successes=1, warmup=[{"method": "GET", "path": "/slow", "timeout": 1}])
+        with QaRepo(PASS_SCRIPT, serve):
+            result = invoke("qa", "n1")
+        self.assertEqual(result["exitCode"], 2)
+        self.assertIn("warm-up GET /slow did not answer", result["tail"])
+
+    def test_bare_string_ready_still_means_anything_below_500(self):
+        port = free_port()
+        serve = scripted_server(port, SEQUENCE_HANDLER, ready=f"http://127.0.0.1:{port}/404")
+        with QaRepo(PASS_SCRIPT, serve):
+            result = invoke("qa", "n1")
+        self.assertEqual(result["exitCode"], 0, result)
+
+
+class RelayTruthTests(unittest.TestCase):
+    def test_relay_never_retries_a_received_5xx(self):
+        port = free_port()
+        script = 'curl -s -o /dev/null -w "%{http_code}" "$GAUNTLET_URL/504-200" > status.txt; echo "PASS Given a 504, when relayed, then it is seen"\n'
+        serve = scripted_server(port, SEQUENCE_HANDLER, ready=[{"url": f"http://127.0.0.1:{port}/200"}], successes=1)
+        with QaRepo(script, serve) as repo:
+            invoke("qa", "n1")
+            with open(os.path.join(repo.root, "status.txt")) as f:
+                status = f.read()
+        self.assertEqual(status, "504")
+
+    def test_unreachable_upstream_is_a_relay_error_the_product_cannot_produce(self):
+        relay = run.WireEvidence("http://127.0.0.1:1/")
+        import threading, urllib.request, urllib.error
+        threading.Thread(target=relay.serve_forever, daemon=True).start()
+        try:
+            urllib.request.urlopen(relay.url + "anything")
+            self.fail("expected a relay error")
+        except urllib.error.HTTPError as response:
+            self.assertEqual(response.code, 599)
+            self.assertEqual(response.headers["X-Gauntlet-Relay-Error"], "upstream did not answer")
+        finally:
+            relay.shutdown()
+            relay.server_close()
+
+    def test_upstream_timeout_comes_from_serve_and_is_a_relay_error(self):
+        port = free_port()
+        handler = "  def do_GET(self):\n    if self.path == '/slow': import time; time.sleep(3)\n    self.reply(200)\n"
+        script = 'curl -s -o /dev/null -w "%{http_code}" "$GAUNTLET_URL/slow" > status.txt; echo "PASS Given a slow upstream, when relayed, then the relay says so"\n'
+        serve = scripted_server(port, handler, ready=[{"url": f"http://127.0.0.1:{port}/"}], successes=1, upstreamTimeout=1)
+        with QaRepo(script, serve) as repo:
+            invoke("qa", "n1")
+            with open(os.path.join(repo.root, "status.txt")) as f:
+                status = f.read()
+        self.assertEqual(status, "599")
+
+    def test_default_upstream_timeout_is_unchanged(self):
+        self.assertEqual(run.WireEvidence("http://127.0.0.1:1/").upstream_timeout, 60)
+
+
+class QaGuardMoreTests(unittest.TestCase):
     def test_missing_script_is_operational(self):
         port = free_port()
         with QaRepo(None, http_serve(port)):

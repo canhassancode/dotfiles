@@ -28,8 +28,14 @@ QA is the only stage that shares no assumptions with the stages that wrote the c
 | `coverage[]` | `crap` guard | One entry per suite; union of the coverage files |
 | `serve.run` | `qa` guard | Starts the system headlessly (no TUI/multiplexer); killed as a process group afterwards |
 | `serve.url` | `qa` guard | The served system. The QA script never sees it directly: the guard fronts it with a counting relay and hands the relay to the script as `GAUNTLET_URL`; zero requests through it is red (**wire evidence** — the one proof of "against the running system" a stage cannot author) |
-| `serve.ready` | `qa` guard | Polled until it answers below 500; defaults to `serve.url`. Point it at the deepest dependency (an API `/health` that checks the database), not the front door |
-| `serve.timeout` | `qa` guard | Seconds to wait for `ready` |
+| `serve.startup` | `qa` guard | The startup window in seconds (default 60). Everything inside it is environment, never product: a probe that is not ready when it closes is exit 2. `serve.timeout` is the old name and still read |
+| `serve.ready` | `qa` guard | A list of probes `{"url", "expect", "timeout"}`; `expect` is a status or list of statuses (default 200), `timeout` is the per-attempt limit in seconds (default 15 — a lazily built route takes longer than one second to answer the first time, and that is not a failure). A bare string is one probe expecting anything below 500; absent, `serve.url` is probed. One probe per dependency the criteria will cross — an API `/health` that checks the database, a protected route expecting 401 so the authoriser is built — never just the front door |
+| `serve.successes` | `qa` guard | Consecutive expected answers required from every probe (default 2): one can be luck, two cannot be the first-invoke build |
+| `serve.interval` | `qa` guard | Seconds between polls (default 1) |
+| `serve.warmup` | `qa` guard | Requests sent once, in order, straight to `serve.url` after every probe is ready and before the script runs — `"POST /api/auth/login"` or `{"method", "path", "body", "timeout"}`. Their statuses are logged and never judged (a 401 is a fine warm-up); one that never answers is exit 2. They bypass the relay, so they add nothing to wire evidence. Needed only when a route builds on first use and no probe can cross it unauthenticated |
+| `serve.upstreamTimeout` | `qa` guard | Seconds the relay waits on the served system per request (default 60). Set it above any gateway timeout in the path so a real 504 arrives as the product's, not as the relay's |
+
+The relay is a witness, not a client: it never retries, and when it cannot relay at all it answers **599** with an `X-Gauntlet-Relay-Error` header naming why — a status the product will not produce, so a QA script reading status codes can tell "the harness gave up" from "the product failed". Four phases in order — start, ready, warm-up, verdict — and only the verdict phase can go exit 1.
 
 The QA stage calibrates its script with `run.py qa-dry <nonce>` before the guard judges it: same server, same relay, plus the script's full output, no receipt, three per nonce. The guard then serves fresh and runs the script itself. A port that already has a listener when the guard starts is an environment failure (exit 2, `serve.run` not started) — an orphaned dev server would otherwise be judged as the product.
 | `protectedPaths` | ask-gate hook | Measurement apparatus and infra a stage may only edit with a human's approval |
@@ -57,7 +63,7 @@ The seam is whatever makes "drive the served system" honest for *this* repo. Dec
 | HTTP API with a database | supertest/fetch against the app with the test DB | the real process + test DB |
 | BFF / gateway (e.g. `carpata/public-api`) | supertest with the upstream client mocked | the real process with the **upstream stubbed** — a small fixture server shaped by the codegen'd schema, upstream URL pointed at it; QA validates responses against the BFF's own `openapi.json` |
 | Frontend (e.g. `carpata/procurement`) | playwright, BFF stubbed at the network edge (`page.route`), fixtures derived from the BFF's `openapi.json` | the dev server with the same stub; QA is a throwaway playwright spec |
-| Serverless full stack (e.g. `brushfeed`) | jest against the client/API layer | `sst dev --mode=mono` + dev DB; `ready` = API `/health` |
+| Serverless full stack (e.g. `brushfeed`) | jest against the client/API layer | a local process serving the same app the handler wraps + dev DB; `ready` = API `/health` plus a protected route expecting 401. Not `sst dev` live-lambda: every invocation crosses the deployed gateway and its timeouts, functions build on first invoke, and concurrent invocations serialise through one bridge channel — none of which is the product |
 | Lambda handler | handler invoked with a real event | same, or skipped |
 | MCP server | JSON-RPC over stdio | the binary on stdio |
 | Library / ops / infra | unit or none | skipped by config |

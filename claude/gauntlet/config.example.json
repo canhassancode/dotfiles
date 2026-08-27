@@ -13,8 +13,13 @@
   "serve": {
     "run": "pnpm dev",
     "url": "http://127.0.0.1:4321/",
-    "ready": "http://127.0.0.1:4321/api/health",
-    "timeout": 60
+    "startup": 120,
+    "ready": [
+      { "url": "http://127.0.0.1:4321/api/health", "expect": 200, "timeout": 30 },
+      { "url": "http://127.0.0.1:4321/api/me", "expect": 401, "timeout": 30 }
+    ],
+    "successes": 2,
+    "warmup": []
   },
   "coverage": [
     {
