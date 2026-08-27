@@ -31,5 +31,12 @@
     "vitest.config.*",
     "tsconfig*.json",
     "package.json"
-  ]
+  ],
+  "edges": [
+    "src/pages/**",
+    "src/middleware.ts"
+  ],
+  "depth": {
+    "ceiling": 15
+  }
 }

@@ -8,10 +8,22 @@ captured to <repo>/.gauntlet/runs/<nonce>.log, and prints exactly one JSON line:
 
     {"nonce", "guard", "exitCode", "receipt", "tail", "offenders"?}
 
-`ticket <nonce> <issue>` fetches the issue verbatim and persists it to .gauntlet/ticket.json
-as {"issue", "title", "body"} — the gauntlet's one input contract, read from disk by every
-stage and later guard. The ticket never crosses the conduit: the JSON line carries only the
-receipt-verified fields, so nothing large has to survive a model relay byte-for-byte.
+`preflight <ref> [--from <stage>]` is the skill's entry point, run in the operator's session
+with no model in the loop: leaves main, mints .gauntlet/run-secret, resolves the ticket by
+origin (a GitHub issue number or a markdown path) into .gauntlet/ticket.json, refuses a body
+without Given/When/Then criteria, then runs clean-tree, install, setup, build and coverage —
+plus `spec green` when re-entering past the coder. Prints one JSON line the skill hands to
+the workflow as args: {"ok", "repoRoot", "headSha", "branch", "secret", "ticket", "from",
+"failed"?, "tail"?}. Every stage and later guard reads the ticket from disk; it never
+crosses a conduit.
+
+`reachability <nonce>` requires every production file the branch adds to be an edge
+(config.edges globs — routes, pages, handlers the runtime reaches by itself) or to be
+imported, transitively, from an edge or a pre-existing file. Red names the orphans.
+
+`depth <nonce>` requires every production file the branch adds to carry at least
+config.depth.ceiling (default 15) implementation lines per exported symbol — Ousterhout's
+depth, operationalised: it fails pass-throughs and barrels. Adds {"offenders"}.
 
 `spec <nonce> red|green` reads the ticket's `- [ ] Given … when … then …` criteria, runs
 config.acceptance.run, and requires exactly one test named after each criterion (and no
@@ -19,31 +31,38 @@ stray test in the same files): `red` = every criterion test fails on the untouch
 `green` = every one passes. Mocking a module under sourcePaths in an acceptance file is
 exit 1. Adds {"criteria", "tests", "problems"}.
 
-`qa <nonce>` starts config.serve.run, waits for config.serve.ready (default serve.url) to answer below 500, runs the QA
-stage's .gauntlet/qa/<nonce>.sh with GAUNTLET_URL set, and reads its `PASS <criterion>` /
-`FAIL <criterion>` lines: any FAIL (or none of either) is exit 1, a server that never
-answers is exit 2, no serve in config is exit 0 with "skipped". The server is always
-stopped. Adds {"passed", "failed"} or {"skipped"}.
+`qa <nonce>` starts config.serve.run, waits for config.serve.ready (default serve.url) to
+answer below 500, puts a counting relay in front of serve.url, runs the QA stage's
+.gauntlet/qa/<nonce>.sh with GAUNTLET_URL set to the relay, and reads its `PASS <criterion>`
+/ `FAIL <criterion>` lines: any FAIL (or none of either) is exit 1, zero requests through
+the relay is exit 1 (the script proved nothing against the served system), a server that
+never answers is exit 2, no serve in config is exit 0 with "skipped". The server is always
+stopped. Adds {"passed", "failed", "requests"} or {"skipped"}.
 
 `verdict <nonce>` writes .gauntlet/verdict-<HEAD>.json = {"sha", "clean": true, "source":
 "gauntlet"} — the artefact the pre-PR hook requires. The workflow mints it only after
 every gate is green; it is the machine's signature on HEAD, replacing the review stage's.
 
-The workflow verifies `receipt` (FNV-1a over the per-run secret, nonce and exit code)
+The workflow verifies `receipt` (FNV-1a over the per-run secret, nonce and exit code —
+and HEAD, when the guard reports it, so `clean-tree`'s `head` is a branch field too)
 so a relayed result that never came from this script is rejected as a conduit error.
 Exit codes: 0 pass, 1 guard failed (code), 2 operational (infra / harness / protected
 file edited), 127 unknown guard. The process itself always exits 0 — the verdict is the
 JSON, never the runner's own status.
 """
+import http.server
 import json
 import os
 import re
+import secrets
 import signal
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
+from fnmatch import fnmatch
 from pathlib import Path
 
 LOCKFILE_INSTALL = [
@@ -102,6 +121,22 @@ def fetch_ticket(issue: str) -> dict:
     if not body.strip():
         return {"exitCode": 2, "tail": f"issue {issue} has an empty body"}
     return {"exitCode": 0, "title": ticket.get("title", ""), "body": body}
+
+
+def read_ticket_file(path: Path) -> dict:
+    text = path.read_text()
+    heading = re.search(r"^#\s+(.+?)\s*$", text, re.MULTILINE)
+    title = heading.group(1) if heading else path.stem
+    return {"exitCode": 0, "title": title, "body": text}
+
+
+def resolve_ticket(ref: str) -> dict:
+    if re.fullmatch(r"\d+", ref):
+        return fetch_ticket(ref)
+    path = Path(ref).expanduser()
+    if path.is_file():
+        return read_ticket_file(path)
+    return {"exitCode": 2, "tail": f"unknown ticket origin: {ref!r} is neither an issue number nor a readable file"}
 
 
 CRITERION = re.compile(r"^\s*-\s*\[[ xX]\]\s*(given\b.+?)\s*$", re.IGNORECASE | re.MULTILINE)
@@ -204,6 +239,110 @@ def spec_guard(mode: str, root: Path, config: dict, log: Path) -> dict:
     }
 
 
+CODE_SUFFIXES = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".py", ".astro", ".svelte", ".vue"}
+TEST_FILE = re.compile(r"\.(?:spec|test|stories)\.[cm]?[jt]sx?$|(?:^|/)(?:tests?|__tests__|__mocks__)/")
+IMPORT_SPECIFIER = re.compile(r"""(?:\bfrom|\bimport|\brequire\()\s*['"]([^'"]+)['"]""")
+MODULE_SUFFIX = re.compile(r"\.[cm]?[jt]sx?$")
+EXPORT_DECLARATION = re.compile(r"^export\s+(?:default\s+)?(?:async\s+)?(?:const|let|var|function\*?|class|abstract\s+class|type|interface|enum|namespace)\b|^export\s+default\b", re.MULTILINE)
+EXPORT_LIST = re.compile(r"^export\s*(?:type\s*)?\{([^}]*)\}", re.MULTILINE)
+EXPORT_STAR = re.compile(r"^export\s+\*", re.MULTILINE)
+PY_PUBLIC = re.compile(r"^(?:def|class)\s+[A-Za-z]", re.MULTILINE)
+NOT_IMPLEMENTATION = re.compile(r"^\s*(?:import\b|export\s.*\bfrom\b|export\s*\{|//|/\*|\*|#|[{}()\[\];,]*$)")
+DEFAULT_DEPTH_CEILING = 15
+
+
+def merge_base(root: Path) -> str:
+    for upstream in ("origin/HEAD", "main", "master"):
+        base = git(root, "merge-base", "HEAD", upstream)
+        if base:
+            return base
+    return ""
+
+
+def is_production(path: str, source_paths: list[str]) -> bool:
+    under_sources = path.startswith(tuple(f"{source.rstrip('/')}/" for source in source_paths))
+    return under_sources and Path(path).suffix in CODE_SUFFIXES and not TEST_FILE.search(path)
+
+
+def added_production_files(root: Path, config: dict) -> list[str]:
+    base = merge_base(root)
+    if not base:
+        return []
+    sources = config.get("sourcePaths") or ["src"]
+    added = git(root, "diff", "--name-only", "--diff-filter=A", f"{base}..HEAD").splitlines()
+    return sorted(path for path in added if is_production(path, sources))
+
+
+def module_names(path: str) -> set[str]:
+    without_suffix = MODULE_SUFFIX.sub("", path) if MODULE_SUFFIX.search(path) else str(Path(path).with_suffix(""))
+    names = {without_suffix}
+    if Path(without_suffix).name == "index":
+        names.add(str(Path(without_suffix).parent))
+    return names
+
+
+def references(specifier: str, importer: str, candidate: str) -> bool:
+    names = module_names(candidate)
+    target = MODULE_SUFFIX.sub("", specifier)
+    if target.startswith("."):
+        resolved = os.path.normpath(os.path.join(os.path.dirname(importer), target))
+        return resolved in names or f"{resolved}/index" in names
+    tail = "/" + target.split("/", 1)[1] if "/" in target and target[0] in "@~#" else "/" + target
+    return any(name == target or name.endswith(tail) for name in names)
+
+
+def reachability_guard(root: Path, config: dict) -> dict:
+    added = added_production_files(root, config)
+    edges = config.get("edges") or []
+    reached = {path for path in added if any(fnmatch(path, edge) for edge in edges)}
+    orphans = [path for path in added if path not in reached]
+    if not orphans:
+        return {"exitCode": 0, "added": added, "problems": []}
+    sources = config.get("sourcePaths") or ["src"]
+    code = [path for path in git(root, "ls-files").splitlines() if is_production(path, sources)]
+    imports = {path: IMPORT_SPECIFIER.findall((root / path).read_text(errors="ignore")) for path in code}
+    frontier = (set(code) - set(added)) | reached
+    grew = True
+    while grew:
+        grew = False
+        for candidate in orphans:
+            if candidate in reached:
+                continue
+            if any(references(specifier, importer, candidate) for importer in frontier for specifier in imports.get(importer, [])):
+                reached.add(candidate)
+                frontier.add(candidate)
+                grew = True
+    problems = [f"{path} is reached by nothing: not an edge and imported from no edge or pre-existing file" for path in orphans if path not in reached]
+    return {"exitCode": 1 if problems else 0, "added": added, "problems": problems, "tail": "\n".join(problems)}
+
+
+def export_count(text: str, suffix: str) -> int:
+    if suffix == ".py":
+        return len(PY_PUBLIC.findall(text))
+    listed = sum(len([name for name in group.split(",") if name.strip()]) for group in EXPORT_LIST.findall(text))
+    return len(EXPORT_DECLARATION.findall(text)) + listed + len(EXPORT_STAR.findall(text))
+
+
+def implementation_lines(text: str) -> int:
+    return sum(1 for line in text.splitlines() if line.strip() and not NOT_IMPLEMENTATION.match(line))
+
+
+def depth_guard(root: Path, config: dict) -> dict:
+    ceiling = float((config.get("depth") or {}).get("ceiling", DEFAULT_DEPTH_CEILING))
+    offenders = []
+    for path in added_production_files(root, config):
+        text = (root / path).read_text(errors="ignore")
+        exports = export_count(text, Path(path).suffix)
+        if not exports:
+            continue
+        lines = implementation_lines(text)
+        depth = round(lines / exports, 1)
+        if depth < ceiling:
+            offenders.append({"file": path, "exports": exports, "lines": lines, "depth": depth})
+    tail = "\n".join(f"{o['file']}: {o['lines']} implementation lines over {o['exports']} exports = depth {o['depth']} (ceiling {ceiling:g})" for o in offenders)
+    return {"exitCode": 1 if offenders else 0, "ceiling": ceiling, "offenders": offenders, "tail": tail}
+
+
 QA_LINE = re.compile(r"^(PASS|FAIL)\s+(.+?)\s*$", re.MULTILINE)
 SERVE_TIMEOUT = 60
 
@@ -212,15 +351,76 @@ def wait_for(url: str, timeout: float) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            urllib.request.urlopen(url, timeout=1)
+            urllib.request.urlopen(url, timeout=1).close()
             return True
         except urllib.error.HTTPError as response:
+            response.close()
             if response.code < 500:
                 return True
             time.sleep(0.2)
         except (urllib.error.URLError, OSError):
             time.sleep(0.2)
     return False
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+HOP_BY_HOP = {"connection", "keep-alive", "transfer-encoding", "content-length", "host", "proxy-connection", "te", "trailer", "upgrade"}
+
+
+class WireEvidence(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self, upstream: str):
+        super().__init__(("127.0.0.1", 0), RelayHandler)
+        self.upstream = upstream.rstrip("/")
+        self.requests = 0
+        self.lock = threading.Lock()
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self.server_address[1]}/"
+
+
+class RelayHandler(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, *args) -> None:
+        return
+
+    def relay(self) -> None:
+        server: WireEvidence = self.server  # type: ignore[assignment]
+        with server.lock:
+            server.requests += 1
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length) if length else None
+        headers = {name: value for name, value in self.headers.items() if name.lower() not in HOP_BY_HOP}
+        request = urllib.request.Request(server.upstream + self.path, data=body, method=self.command, headers=headers)
+        try:
+            response = urllib.request.build_opener(NoRedirect).open(request, timeout=60)
+        except urllib.error.HTTPError as error:
+            response = error
+        except (urllib.error.URLError, OSError) as error:
+            payload = f"gauntlet relay: upstream {server.upstream} unreachable: {error}".encode()
+            self.send_response(502)
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+        payload = response.read()
+        response.close()
+        self.send_response(response.status)
+        for name, value in response.headers.items():
+            if name.lower() not in HOP_BY_HOP:
+                self.send_header(name, value)
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = do_HEAD = do_OPTIONS = relay
 
 
 def qa_guard(root: Path, config: dict, nonce: str, log: Path) -> dict:
@@ -234,15 +434,19 @@ def qa_guard(root: Path, config: dict, nonce: str, log: Path) -> dict:
         sink.write(f"$ {serve['run']}\n")
         sink.flush()
         server = subprocess.Popen(["bash", "-c", serve["run"]], cwd=root, stdout=sink, stderr=subprocess.STDOUT, start_new_session=True)
+        relay = WireEvidence(serve["url"])
+        threading.Thread(target=relay.serve_forever, daemon=True).start()
         try:
             ready_url = serve.get("ready", serve["url"])
             if not wait_for(ready_url, float(serve.get("timeout", SERVE_TIMEOUT))):
                 return {"exitCode": 2, "tail": f"{ready_url} did not answer below 500 within {serve.get('timeout', SERVE_TIMEOUT)}s:\n" + log.read_text()[-TAIL_CHARS:]}
-            sink.write(f"$ bash {script.relative_to(root)}\n")
+            sink.write(f"$ GAUNTLET_URL={relay.url} bash {script.relative_to(root)}\n")
             sink.flush()
-            run = subprocess.run(["bash", str(script)], cwd=root, capture_output=True, text=True, env={**os.environ, "GAUNTLET_URL": serve["url"]})
+            run = subprocess.run(["bash", str(script)], cwd=root, capture_output=True, text=True, env={**os.environ, "GAUNTLET_URL": relay.url})
             sink.write(run.stdout + run.stderr)
         finally:
+            relay.shutdown()
+            relay.server_close()
             os.killpg(server.pid, signal.SIGTERM)
             try:
                 server.wait(timeout=5)
@@ -251,9 +455,13 @@ def qa_guard(root: Path, config: dict, nonce: str, log: Path) -> dict:
     verdicts = QA_LINE.findall(run.stdout)
     passed = [criterion for status, criterion in verdicts if status == "PASS"]
     failed = [criterion for status, criterion in verdicts if status == "FAIL"]
+    output = (run.stdout + run.stderr)[-TAIL_CHARS:]
+    result = {"passed": passed, "failed": failed, "requests": relay.requests}
     if not verdicts:
-        return {"exitCode": 1, "passed": [], "failed": [], "tail": "QA script printed no PASS/FAIL lines:\n" + (run.stdout + run.stderr)[-TAIL_CHARS:]}
-    return {"exitCode": 1 if failed else 0, "passed": passed, "failed": failed, "tail": (run.stdout + run.stderr)[-TAIL_CHARS:]}
+        return {**result, "exitCode": 1, "tail": "QA script printed no PASS/FAIL lines:\n" + output}
+    if relay.requests == 0:
+        return {**result, "exitCode": 1, "tail": "QA made 0 requests to the served system through GAUNTLET_URL — the script proved nothing from the outside:\n" + output}
+    return {**result, "exitCode": 1 if failed else 0, "tail": output}
 
 
 def resolve(guard: str, root: Path, config: dict) -> tuple[str | None, str | None]:
@@ -261,6 +469,8 @@ def resolve(guard: str, root: Path, config: dict) -> tuple[str | None, str | Non
         return config.get(guard), None
     if guard == "install":
         return install_command(root, config), None
+    if guard in ("coverage", "crap") and not config.get("coverage"):
+        return None, None
     if guard == "coverage":
         return coverage_command(config), None
     if guard == "crap":
@@ -271,51 +481,60 @@ def resolve(guard: str, root: Path, config: dict) -> tuple[str | None, str | Non
     return None, None
 
 
-def main(argv: list[str]) -> int:
-    guard, nonce = argv[0], argv[1]
-    argument = argv[2] if len(argv) > 2 else None
-    root = Path(git(Path.cwd(), "rev-parse", "--show-toplevel") or Path.cwd())
+STAGES = ("specify", "coder", "cleaner", "qa", "ship")
+PREFLIGHT_GUARDS = ("clean-tree", "install", "setup", "build", "coverage")
+
+
+def write_ticket(root: Path, ref: str) -> dict:
+    ticket = resolve_ticket(ref)
+    if ticket["exitCode"] != 0:
+        return ticket
+    if not criteria_from(ticket["body"]):
+        return {"exitCode": 1, "tail": f"ticket {ref} has no '- [ ] Given …, when …, then …' acceptance criteria — write them with /to-tickets first"}
+    issue = ref if re.fullmatch(r"\d+", ref) else Path(ref).stem
+    (root / ".gauntlet" / "ticket.json").write_text(json.dumps({"issue": issue, "title": ticket["title"], "body": ticket["body"]}))
+    return {"exitCode": 0}
+
+
+def guard_result(guard: str, nonce: str, argument: str | None, root: Path, config: dict) -> dict:
     runs = root / ".gauntlet" / "runs"
     runs.mkdir(parents=True, exist_ok=True)
-    secret_file = root / ".gauntlet" / "run-secret"
-    secret = secret_file.read_text().strip() if secret_file.exists() else ""
-    config_file = root / ".gauntlet" / "config.json"
     result: dict = {"nonce": nonce, "guard": guard}
 
-    if not config_file.exists():
-        result.update(exitCode=2, tail="no .gauntlet/config.json in this repo")
-        return emit(result, secret)
-    config = json.loads(config_file.read_text())
-
     if guard == "ticket":
-        ticket = fetch_ticket(argument or "")
-        if ticket["exitCode"] == 0:
-            (root / ".gauntlet" / "ticket.json").write_text(json.dumps({"issue": argument, "title": ticket["title"], "body": ticket["body"]}))
-        result.update(exitCode=ticket["exitCode"], **({"tail": ticket["tail"]} if "tail" in ticket else {}))
-        return emit(result, secret)
+        result.update(write_ticket(root, argument or ""))
+        return result
 
     if guard == "spec":
         result.update(spec_guard(argument or "", root, config, runs / f"{nonce}.log"))
-        return emit(result, secret)
+        return result
+
+    if guard == "reachability":
+        result.update(reachability_guard(root, config))
+        return result
+
+    if guard == "depth":
+        result.update(depth_guard(root, config))
+        return result
 
     if guard == "verdict":
         sha = git(root, "rev-parse", "HEAD")
         (root / ".gauntlet" / f"verdict-{sha}.json").write_text(json.dumps({"sha": sha, "clean": True, "source": "gauntlet"}))
         result.update(exitCode=0, tail=f"verdict written for {sha}")
-        return emit(result, secret)
+        return result
 
     if guard == "qa":
         result.update(qa_guard(root, config, nonce, runs / f"{nonce}.log"))
-        return emit(result, secret)
+        return result
 
     command, inline = resolve(guard, root, config)
     if command is None and inline is None:
-        result.update(exitCode=127 if guard not in ("install", "setup", "teardown") else 0, tail=f"no command for guard '{guard}'")
-        return emit(result, secret)
+        result.update(exitCode=127 if guard not in ("install", "setup", "teardown", "coverage", "crap") else 0, tail=f"no command for guard '{guard}' in config — skipped")
+        return result
 
     if inline is not None:
-        result.update(exitCode=0 if inline == "" else 2, tail=inline and f"working tree dirty — stash or commit first:\n{inline}")
-        return emit(result, secret)
+        result.update(exitCode=0 if inline == "" else 2, tail=inline and f"working tree dirty — stash or commit first:\n{inline}", head=git(root, "rev-parse", "HEAD"))
+        return result
 
     log = runs / f"{nonce}.log"
     with log.open("w") as sink:
@@ -329,11 +548,66 @@ def main(argv: list[str]) -> int:
         verdict_line = next((line for line in reversed(output.splitlines()) if line.startswith("{")), None)
         if verdict_line:
             result["offenders"] = json.loads(verdict_line).get("offenders", [])
-    return emit(result, secret)
+    return result
+
+
+def slug(ref: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", Path(ref).stem if not re.fullmatch(r"\d+", ref) else ref).strip("-")
+
+
+def preflight(ref: str, from_stage: str, root: Path, config: dict) -> dict:
+    if from_stage not in STAGES:
+        return {"ok": False, "failed": "from", "tail": f"--from must be one of {', '.join(STAGES)}"}
+    branch = git(root, "branch", "--show-current")
+    if branch in ("main", "master"):
+        subprocess.run(["git", "checkout", "-q", "-b", f"gauntlet/{slug(ref)}"], cwd=root)
+        branch = git(root, "branch", "--show-current")
+    (root / ".gauntlet").mkdir(exist_ok=True)
+    secret = secrets.token_hex(8)
+    (root / ".gauntlet" / "run-secret").write_text(secret + "\n")
+    outcome = {"repoRoot": str(root), "branch": branch, "secret": secret, "ticket": ref, "from": from_stage}
+    ticket = write_ticket(root, ref)
+    if ticket["exitCode"] != 0:
+        return {**outcome, "ok": False, "failed": "ticket", "tail": ticket["tail"]}
+    guards = list(PREFLIGHT_GUARDS) + (["spec"] if STAGES.index(from_stage) >= STAGES.index("cleaner") else [])
+    for guard in guards:
+        result = guard_result(guard, f"preflight-{guard}", "green" if guard == "spec" else None, root, config)
+        if result["exitCode"] != 0:
+            return {**outcome, "ok": False, "failed": guard, "exitCode": result["exitCode"], "tail": result.get("tail", "")}
+    return {**outcome, "ok": True, "headSha": git(root, "rev-parse", "HEAD")}
+
+
+def main(argv: list[str]) -> int:
+    root = Path(git(Path.cwd(), "rev-parse", "--show-toplevel") or Path.cwd())
+    config_file = root / ".gauntlet" / "config.json"
+    secret_file = root / ".gauntlet" / "run-secret"
+    secret = secret_file.read_text().strip() if secret_file.exists() else ""
+
+    if argv and argv[0] == "preflight":
+        ref = argv[1] if len(argv) > 1 else ""
+        from_stage = argv[argv.index("--from") + 1] if "--from" in argv and argv.index("--from") + 1 < len(argv) else "specify"
+        if not config_file.exists():
+            print(json.dumps({"ok": False, "failed": "config", "tail": "no .gauntlet/config.json in this repo — see the gauntlet README"}))
+            return 0
+        if not ref:
+            print(json.dumps({"ok": False, "failed": "ticket", "tail": "usage: run.py preflight <issue-number|path> [--from <stage>]"}))
+            return 0
+        print(json.dumps(preflight(ref, from_stage, root, json.loads(config_file.read_text()))))
+        return 0
+
+    guard, nonce = argv[0], argv[1]
+    argument = argv[2] if len(argv) > 2 else None
+    if not config_file.exists():
+        return emit({"nonce": nonce, "guard": guard, "exitCode": 2, "tail": "no .gauntlet/config.json in this repo"}, secret)
+    return emit(guard_result(guard, nonce, argument, root, json.loads(config_file.read_text())), secret)
+
+
+def receipt(secret: str, nonce: str, exit_code: int, head: str | None = None) -> str:
+    return fnv1a32(f"{secret}:{nonce}:{exit_code}" + (f":{head}" if head else ""))
 
 
 def emit(result: dict, secret: str) -> int:
-    result["receipt"] = fnv1a32(f"{secret}:{result['nonce']}:{result['exitCode']}")
+    result["receipt"] = receipt(secret, result["nonce"], result["exitCode"], result.get("head"))
     print(json.dumps(result))
     return 0
 

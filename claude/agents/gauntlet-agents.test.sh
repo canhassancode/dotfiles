@@ -16,7 +16,7 @@ for stage in specify coder cleaner qa ship; do
   f="gauntlet-$stage.md"
   [ -f "$f" ] && ok "$f exists" || { ko "$f missing"; continue; }
   frontmatter "$f" | grep -q "^name: gauntlet-$stage$" && ok "$f name" || ko "$f name"
-  has "$f" disallowedTools Agent
+  if [ "$stage" = specify ]; then has "$f" tools Agent; else has "$f" disallowedTools Agent; fi
   grep -q 'gh issue view' "$f" && ko "$f mentions gh issue view" || ok "$f never asks for the ticket itself"
   grep -q 'run\.py' "$f" && ko "$f mentions run.py" || ok "$f never sees the runner"
 done
@@ -28,6 +28,15 @@ lacks gauntlet-qa.md tools Edit;       lacks gauntlet-qa.md tools Write;  has ga
 frontmatter gauntlet-ship.md | grep -q '^tools: Bash$' && ok "ship is Bash only" || ko "ship is not Bash only"
 
 for phrase in "Mysterious Name" "Speculative Generality" "Eliminable structure" "Diff-confined" "Raw values" "The first four are hard"; do
+  grep -q "$phrase" gauntlet-cleaner.md && ok "cleaner carries: $phrase" || ko "cleaner lacks: $phrase"
+done
+for phrase in "read-only" "edge" "existing module" "names, per test\|one line per test"; do
+  grep -q "$phrase" gauntlet-specify.md && ok "specify carries: $phrase" || ko "specify lacks: $phrase"
+done
+for phrase in "ladder" "deepen" "reachability" "depth"; do
+  grep -q "$phrase" gauntlet-coder.md && ok "coder carries: $phrase" || ko "coder lacks: $phrase"
+done
+for phrase in "sibling pass" "outside the diff" "deletion test"; do
   grep -q "$phrase" gauntlet-cleaner.md && ok "cleaner carries: $phrase" || ko "cleaner lacks: $phrase"
 done
 grep -q "Mocked subject" gauntlet-cleaner.md && ko "cleaner carries the verification baseline (guards own it)" || ok "cleaner leaves verification to the guards"

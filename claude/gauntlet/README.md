@@ -1,6 +1,12 @@
 # Gauntlet — the once-per-repo bootstrap
 
-The gauntlet is a gated build spine: specify → coder → cleaner → QA → ship. Stages are LLM agents; the gates between them are deterministic (`run.py`). Everything the gates know about a repo comes from one file, `.gauntlet/config.json`. Filling it is a once-per-repo job for a human, and the quality of the run is capped by the honesty of that file.
+The gauntlet is a gated build spine: preflight → specify → coder → cleaner → QA → ship. Stages are LLM agents; the gates between them are deterministic (`run.py`). Everything the gates know about a repo comes from one file, `.gauntlet/config.json`. Filling it is a once-per-repo job for a human, and the quality of the run is capped by the honesty of that file.
+
+## Running it
+
+`/gauntlet <ref>` — the skill. `<ref>` is a GitHub issue number or a path to a markdown ticket whose body carries `- [ ] Given …, when …, then …` criteria (a Linear ticket is fetched by the skill and handed over as a file). The skill runs `run.py preflight <ref>` in your session — no model: leave main, mint the run secret, write `ticket.json`, then clean-tree, install, setup, build, coverage — and on green invokes the `gauntlet-run` workflow with that JSON as `args`. Red stops in your session with the failing guard's tail.
+
+An escalated run prints its re-entry command: `/gauntlet <ref> --from <specify|coder|cleaner|qa|ship>`. Preflight re-runs (and checks acceptance green when re-entering past the coder); the workflow enters at that stage with everything else read from disk.
 
 ## The principle
 
@@ -13,13 +19,15 @@ QA is the only stage that shares no assumptions with the stages that wrote the c
 | Key | Read by | Meaning |
 |---|---|---|
 | `build` | coder, cleaner gates | Type-check / compile; red fails the stage |
-| `sourcePaths` | `crap` guard | Where production code lives |
+| `sourcePaths` | `crap`, `reachability`, `depth` guards | Where production code lives |
+| `edges` | `reachability` guard, specify | Globs of files the runtime reaches by itself — routes, pages, middleware, handler entries. Every production file a branch adds must be an edge or be imported from an edge or a pre-existing file; the orphan is red and routes to the coder |
+| `depth.ceiling` | `depth` guard | Minimum implementation lines per exported symbol for a file the branch adds (default 15). A barrel or pass-through is red and routes to the cleaner |
 | `setup` / `teardown` | every test-running guard | e.g. start/stop the test database |
 | `acceptance.run` | `spec` guard | Runs only the acceptance tests and writes a jest/vitest JSON or playwright report to `acceptance.output` |
 | `acceptance.pattern` | specify, `spec` guard | Glob the acceptance files must match; nothing else may live there |
 | `coverage[]` | `crap` guard | One entry per suite; union of the coverage files |
 | `serve.run` | `qa` guard | Starts the system headlessly (no TUI/multiplexer); killed as a process group afterwards |
-| `serve.url` | QA stage as `GAUNTLET_URL` | The base the QA script drives |
+| `serve.url` | `qa` guard | The served system. The QA script never sees it directly: the guard fronts it with a counting relay and hands the relay to the script as `GAUNTLET_URL`; zero requests through it is red (**wire evidence** — the one proof of "against the running system" a stage cannot author) |
 | `serve.ready` | `qa` guard | Polled until it answers below 500; defaults to `serve.url`. Point it at the deepest dependency (an API `/health` that checks the database), not the front door |
 | `serve.timeout` | `qa` guard | Seconds to wait for `ready` |
 | `protectedPaths` | ask-gate hook | Measurement apparatus and infra a stage may only edit with a human's approval |
@@ -28,7 +36,7 @@ QA is the only stage that shares no assumptions with the stages that wrote the c
 
 ## `.gauntlet/ticket.json` — the one input
 
-`{"issue", "title", "body"}`, where `body` carries `- [ ] Given …, when …, then …` acceptance criteria. The `ticket` guard writes it from `gh issue view`; every stage and later guard reads it from disk. Whatever writes that file is the ticket's origin — the gauntlet does not know or care which.
+`{"issue", "title", "body"}`, where `body` carries `- [ ] Given …, when …, then …` acceptance criteria. `run.py preflight` writes it — from `gh issue view` for a number, from the file for a path — and refuses a body with no criteria: criteria come from `/to-tickets`, never from the gauntlet. Every stage and later guard reads it from disk.
 
 Nothing in `.gauntlet/` is cleared by the harness: `teardown` is only the repo's command. The next run overwrites `ticket.json` and `run-secret`; `runs/<nonce>.log` is keyed by HEAD and guard; `verdict-<sha>.json` is keyed by commit and inert unless HEAD returns to that SHA.
 
@@ -64,6 +72,6 @@ Mocking a *dependency* (upstream API, BFF, email) is fine at either seam; mockin
 
 ## Feedback loops
 
-- `python3 run.test.py` — the guards, including QA against a real local server.
-- `node --test ../workflows/gauntlet.test.mjs` — the orchestrator's routing, dry-run, no model or repo.
+- `python3 run.test.py` — the guards and preflight, including QA through the relay against a real local server.
+- `node --test ../workflows/gauntlet-run.test.mjs` — the orchestrator's routing, dry-run, no model or repo.
 - `../agents/gauntlet-agents.test.sh` — the agent definitions' tool contracts.

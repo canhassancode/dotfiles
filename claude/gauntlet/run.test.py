@@ -282,10 +282,35 @@ class QaGuardTests(unittest.TestCase):
     def test_ready_url_is_polled_instead_of_url(self):
         port = free_port()
         serve = {**http_serve(port), "url": "http://127.0.0.1:1/", "ready": f"http://127.0.0.1:{port}/"}
-        script = 'echo "PASS Given the server, when fetched, then it answers"\n'
+        script = 'curl -s "$GAUNTLET_URL" >/dev/null; echo "PASS Given the server, when fetched, then it answers"\n'
         with QaRepo(script, serve):
             result = invoke("qa", "n1")
         self.assertEqual(result["exitCode"], 0)
+        self.assertEqual(result["requests"], 1)
+
+    def test_script_that_never_touches_the_served_system_is_red_with_zero_requests(self):
+        port = free_port()
+        script = 'echo "PASS Given a, when b, then c"\necho "PASS Given d, when e, then f"\n'
+        with QaRepo(script, http_serve(port)):
+            result = invoke("qa", "n1")
+        self.assertEqual(result["exitCode"], 1)
+        self.assertEqual(result["requests"], 0)
+        self.assertIn("0 requests to the served system", result["tail"])
+
+    def test_relay_forwards_status_headers_body_and_does_not_follow_redirects(self):
+        port = free_port()
+        serve = {"run": f"python3 -c \"import http.server\nclass H(http.server.BaseHTTPRequestHandler):\n  def do_GET(self):\n    if self.path == '/go': self.send_response(302); self.send_header('Location', '/login'); self.end_headers(); return\n    body = ('echo ' + self.path + ' ' + self.headers.get('Cookie', '-')).encode(); self.send_response(200); self.send_header('X-Served', 'yes'); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)\n  def do_POST(self):\n    n = int(self.headers.get('Content-Length', 0)); body = self.rfile.read(n); self.send_response(201); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)\n  def log_message(self, *a): pass\nhttp.server.HTTPServer(('127.0.0.1', {port}), H).serve_forever()\"", "url": f"http://127.0.0.1:{port}/", "timeout": 10}
+        script = """
+out=$(curl -s -H 'Cookie: a=1' "$GAUNTLET_URL/api/x"); [ "$out" = "echo /api/x a=1" ] && echo "PASS Given g, when a get is relayed, then path and cookie reach upstream" || echo "FAIL Given g, when a get is relayed, then path and cookie reach upstream ($out)"
+hdr=$(curl -s -D - -o /dev/null "$GAUNTLET_URL/api/x" | grep -i x-served | tr -d '\\r'); [ "$hdr" = "X-Served: yes" ] && echo "PASS Given h, when headers come back, then they are relayed" || echo "FAIL Given h, when headers come back, then they are relayed ($hdr)"
+code=$(curl -s -o /dev/null -w '%{http_code}' "$GAUNTLET_URL/go"); [ "$code" = "302" ] && echo "PASS Given r, when upstream redirects, then the script sees the 302" || echo "FAIL Given r, when upstream redirects, then the script sees the 302 ($code)"
+body=$(curl -s -X POST -d 'hello' -w ' %{http_code}' "$GAUNTLET_URL/post"); [ "$body" = "hello 201" ] && echo "PASS Given p, when a post is relayed, then body and status come back" || echo "FAIL Given p, when a post is relayed, then body and status come back ($body)"
+"""
+        with QaRepo(script, serve):
+            result = invoke("qa", "n1")
+        self.assertEqual(result["failed"], [], result)
+        self.assertEqual(result["exitCode"], 0)
+        self.assertEqual(result["requests"], 4)
 
     def test_missing_script_is_operational(self):
         port = free_port()
@@ -300,6 +325,194 @@ class QaGuardTests(unittest.TestCase):
             result = invoke("qa", "n1")
         self.assertEqual(result["exitCode"], 0)
         self.assertTrue(result["skipped"])
+
+
+def commit(root: str, message: str) -> str:
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", "add", "-A"], cwd=root, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", message], cwd=root, check=True)
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True).stdout.strip()
+
+
+class BranchRepo(GauntletRepo):
+    """A repo with `main` holding the baseline files and a feature branch holding the added ones."""
+
+    def __init__(self, baseline: dict[str, str], added: dict[str, str], config: dict | None = None):
+        super().__init__({"build": "true", "sourcePaths": ["src"], **(config or {})})
+        with open(os.path.join(self.root, ".git", "info", "exclude"), "a") as f:
+            f.write("bin/\nissue.json\n*.md\n.gauntlet/\nacceptance.json\n")
+        subprocess.run(["git", "checkout", "-q", "-b", "main"], cwd=self.root)
+        self.write(baseline)
+        commit(self.root, "baseline")
+        subprocess.run(["git", "checkout", "-q", "-b", "feature"], cwd=self.root)
+        self.write(added)
+        self.head = commit(self.root, "feature")
+
+    def write(self, files: dict[str, str]) -> None:
+        for path, text in files.items():
+            full = os.path.join(self.root, path)
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w") as f:
+                f.write(text)
+
+
+ROUTE = "export const GET = async () => new Response('ok');\n"
+DEEP = "export async function refresh(token: string) {\n" + "\n".join(f"  const step{i} = {i};" for i in range(20)) + "\n  return token;\n}\n"
+
+
+class ReachabilityGuardTests(unittest.TestCase):
+    def test_new_file_imported_by_nothing_is_red_naming_it(self):
+        with BranchRepo({"src/pages/api/posts.ts": ROUTE}, {"src/lib/sessionClient.ts": DEEP, "src/lib/sessionClient.acceptance.spec.ts": "import { refresh } from './sessionClient';\n"}):
+            result = invoke("reachability", "n1")
+        self.assertEqual(result["exitCode"], 1)
+        self.assertEqual(result["problems"], ["src/lib/sessionClient.ts is reached by nothing: not an edge and imported from no edge or pre-existing file"])
+
+    def test_new_file_imported_from_a_pre_existing_file_is_green(self):
+        with BranchRepo({"src/pages/api/posts.ts": ROUTE}, {"src/pages/api/posts.ts": "import { refresh } from '../../lib/sessionClient';\n" + ROUTE, "src/lib/sessionClient.ts": DEEP}):
+            result = invoke("reachability", "n1")
+        self.assertEqual(result["exitCode"], 0, result)
+
+    def test_new_edge_is_green_and_its_helper_reached_through_it_is_green(self):
+        config = {"edges": ["src/pages/**"]}
+        with BranchRepo({"src/index.ts": "export {};\n"}, {"src/pages/api/foo/index.ts": "import { calc } from '@/lib/calc';\n" + ROUTE, "src/lib/calc.ts": DEEP}, config):
+            result = invoke("reachability", "n1")
+        self.assertEqual(result["exitCode"], 0, result)
+
+    def test_directory_index_is_reached_by_a_directory_import(self):
+        with BranchRepo({"src/app.ts": "export {};\n"}, {"src/app.ts": "import { refresh } from './auth';\nexport {};\n", "src/auth/index.ts": DEEP}):
+            result = invoke("reachability", "n1")
+        self.assertEqual(result["exitCode"], 0, result)
+
+    def test_import_from_a_test_file_does_not_count(self):
+        with BranchRepo({"src/app.ts": "export {};\n"}, {"src/lib/x.ts": DEEP, "tests/x.spec.ts": "import '../src/lib/x';\n", "src/lib/x.test.ts": "import './x';\n"}):
+            result = invoke("reachability", "n1")
+        self.assertEqual(result["exitCode"], 1)
+
+    def test_no_added_production_files_is_green(self):
+        with BranchRepo({"src/app.ts": "export {};\n"}, {"src/app.ts": "export const a = 1;\n", "README.md": "x"}):
+            result = invoke("reachability", "n1")
+        self.assertEqual(result["exitCode"], 0)
+        self.assertEqual(result["added"], [])
+
+
+class DepthGuardTests(unittest.TestCase):
+    def test_barrel_and_pass_through_are_red_naming_the_file(self):
+        barrel = "export { a } from './a';\nexport { b } from './b';\nexport * from './c';\n"
+        wrapper = "import { inner } from './inner';\nexport const one = () => inner(1);\nexport const two = () => inner(2);\nexport const three = () => inner(3);\n"
+        with BranchRepo({"src/app.ts": "export {};\n"}, {"src/lib/index.ts": barrel, "src/lib/wrap.ts": wrapper}):
+            result = invoke("depth", "n1")
+        self.assertEqual(result["exitCode"], 1)
+        self.assertEqual([o["file"] for o in result["offenders"]], ["src/lib/index.ts", "src/lib/wrap.ts"])
+        self.assertEqual(result["offenders"][1], {"file": "src/lib/wrap.ts", "exports": 3, "lines": 3, "depth": 1.0})
+
+    def test_deep_module_and_export_free_file_are_green(self):
+        with BranchRepo({"src/app.ts": "export {};\n"}, {"src/lib/deep.ts": DEEP, "src/lib/side-effect.ts": "console.log('hi');\n"}):
+            result = invoke("depth", "n1")
+        self.assertEqual(result["exitCode"], 0, result)
+
+    def test_ceiling_comes_from_config(self):
+        with BranchRepo({"src/app.ts": "export {};\n"}, {"src/lib/deep.ts": DEEP}, {"depth": {"ceiling": 40}}):
+            result = invoke("depth", "n1")
+        self.assertEqual(result["exitCode"], 1)
+        self.assertEqual(result["offenders"][0]["file"], "src/lib/deep.ts")
+
+    def test_python_counts_public_defs(self):
+        with BranchRepo({"src/app.py": "pass\n"}, {"src/lib/util.py": "def a():\n    pass\ndef b():\n    pass\ndef _p():\n    pass\n"}):
+            result = invoke("depth", "n1")
+        self.assertEqual(result["offenders"][0]["exports"], 2)
+
+
+class CleanTreeGuardTests(unittest.TestCase):
+    def test_clean_tree_reports_head_covered_by_the_receipt(self):
+        with BranchRepo({"src/app.ts": "export {};\n"}, {}) as repo:
+            result = invoke("clean-tree", "n1")
+        self.assertEqual(result["exitCode"], 0)
+        self.assertEqual(result["head"], repo.head)
+        self.assertEqual(result["receipt"], run.fnv1a32(f"{SECRET}:n1:0:{repo.head}"))
+
+
+class PreflightTests(unittest.TestCase):
+    def preflight(self, *argv: str) -> dict:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            run.main(["preflight", *argv])
+        return json.loads(out.getvalue().strip().splitlines()[-1])
+
+    def test_issue_number_leaves_main_writes_the_ticket_and_runs_every_guard(self):
+        with BranchRepo({"src/app.ts": "export {};\n"}, {}) as repo:
+            subprocess.run(["git", "checkout", "-q", "main"], cwd=repo.root)
+            repo.fake_gh_issue("Fix login", "- [ ] Given a, when b, then c")
+            result = self.preflight("63")
+            branch = subprocess.run(["git", "branch", "--show-current"], cwd=repo.root, capture_output=True, text=True).stdout.strip()
+            with open(os.path.join(repo.root, ".gauntlet", "ticket.json")) as f:
+                ticket = json.load(f)
+            with open(os.path.join(repo.root, ".gauntlet", "run-secret")) as f:
+                secret = f.read().strip()
+            logs = sorted(os.listdir(os.path.join(repo.root, ".gauntlet", "runs")))
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(branch, "gauntlet/63")
+        self.assertEqual(result["branch"], "gauntlet/63")
+        self.assertEqual(result["secret"], secret)
+        self.assertEqual(result["ticket"], "63")
+        self.assertEqual(result["from"], "specify")
+        self.assertEqual(ticket["issue"], "63")
+        self.assertIn("preflight-build.log", logs)
+        self.assertNotIn("receipt", result)
+
+    def test_markdown_path_is_a_ticket(self):
+        with BranchRepo({"src/app.ts": "export {};\n"}, {}) as repo:
+            path = os.path.join(repo.root, "Fix Login.md")
+            with open(path, "w") as f:
+                f.write("# Fix login flow\n\n- [ ] Given a, when b, then c\n")
+            result = self.preflight(path)
+            with open(os.path.join(repo.root, ".gauntlet", "ticket.json")) as f:
+                ticket = json.load(f)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(ticket, {"issue": "Fix Login", "title": "Fix login flow", "body": "# Fix login flow\n\n- [ ] Given a, when b, then c\n"})
+
+    def test_ticket_without_criteria_stops_before_any_guard(self):
+        with BranchRepo({"src/app.ts": "export {};\n"}, {}) as repo:
+            repo.fake_gh_issue("Rename", "Just rename the thing")
+            result = self.preflight("63")
+            logs = os.listdir(os.path.join(repo.root, ".gauntlet", "runs")) if os.path.isdir(os.path.join(repo.root, ".gauntlet", "runs")) else []
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["failed"], "ticket")
+        self.assertIn("no '- [ ] Given", result["tail"])
+        self.assertEqual(logs, [])
+
+    def test_unknown_origin_and_bad_from_are_named(self):
+        with BranchRepo({"src/app.ts": "export {};\n"}, {}) as repo:
+            repo.fake_gh_issue("t", "- [ ] Given a, when b, then c")
+            unknown = self.preflight("BF-12")
+            bad_from = self.preflight("63", "--from", "review")
+        self.assertEqual(unknown["failed"], "ticket")
+        self.assertIn("unknown ticket origin", unknown["tail"])
+        self.assertEqual(bad_from["failed"], "from")
+
+    def test_failing_guard_names_itself_and_stops(self):
+        with BranchRepo({"src/app.ts": "export {};\n"}, {}, {"build": "exit 3"}) as repo:
+            repo.fake_gh_issue("t", "- [ ] Given a, when b, then c")
+            result = self.preflight("63")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["failed"], "build")
+        self.assertEqual(result["exitCode"], 3)
+
+    def test_re_entering_past_the_coder_requires_acceptance_green(self):
+        results = jest_results({"Given a, when b, then c": "failed"})
+        config = {"acceptance": {"run": "cp results.json acceptance.json", "output": "acceptance.json", "pattern": "tests/*.acceptance.spec.ts"}}
+        with BranchRepo({"src/app.ts": "export {};\n"}, {"results.json": json.dumps(results), "tests/x.acceptance.spec.ts": ""}, config) as repo:
+            repo.fake_gh_issue("t", "- [ ] Given a, when b, then c")
+            red = self.preflight("63", "--from", "qa")
+            from_specify = self.preflight("63", "--from", "specify")
+        self.assertEqual(red["failed"], "spec")
+        self.assertEqual(red["from"], "qa")
+        self.assertTrue(from_specify["ok"], from_specify)
+
+    def test_missing_config_is_named(self):
+        with GauntletRepo() as repo:
+            os.remove(os.path.join(repo.root, ".gauntlet", "config.json"))
+            result = self.preflight("63")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["failed"], "config")
 
 
 class VerdictGuardTests(unittest.TestCase):
