@@ -1,0 +1,35 @@
+{
+  "build": "pnpm type-check",
+  "sourcePaths": [
+    "src"
+  ],
+  "setup": "pnpm test:db:up",
+  "teardown": "pnpm test:db:down",
+  "acceptance": {
+    "run": "pnpm test:integration --json --outputFile=coverage/acceptance.json",
+    "output": "coverage/acceptance.json",
+    "pattern": "modules/*/src/**/*.acceptance.spec.ts"
+  },
+  "serve": {
+    "run": "pnpm dev",
+    "url": "http://127.0.0.1:4321/",
+    "ready": "http://127.0.0.1:4321/api/health",
+    "timeout": 60
+  },
+  "coverage": [
+    {
+      "run": "pnpm test:unit --coverageDirectory=coverage/unit",
+      "output": "coverage/unit/coverage-final.json"
+    },
+    {
+      "run": "pnpm test:integration --coverageDirectory=coverage/integration",
+      "output": "coverage/integration/coverage-final.json"
+    }
+  ],
+  "protectedPaths": [
+    "jest.config.*",
+    "vitest.config.*",
+    "tsconfig*.json",
+    "package.json"
+  ]
+}

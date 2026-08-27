@@ -2,3 +2,5 @@
 .DS_Store
 .playground
 **/.claude/settings.local.json
+.gauntlet/
+__pycache__/
