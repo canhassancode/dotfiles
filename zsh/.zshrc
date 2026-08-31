@@ -37,4 +37,33 @@ fi
 fastfetch
 
 source $ZSH/oh-my-zsh.sh
+
+####################
+#--COCKPIT TOOLS--##
+####################
+export EDITOR="helix"
+export VISUAL="helix"
+
+if command -v fzf >/dev/null; then
+    export FZF_DEFAULT_COMMAND='fd --type f --hidden --strip-cwd-prefix --exclude .git'
+    export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+    export FZF_CTRL_T_OPTS="--preview 'bat --color=always --style=numbers {}'"
+    source <(fzf --zsh)
+fi
+
+if command -v zoxide >/dev/null; then
+    eval "$(zoxide init zsh)"
+fi
+
+rgf() {
+    local file line
+    IFS=: read -r file line _ < <(
+        rg --line-number --no-heading --color=always --smart-case "${1:-}" |
+            fzf --ansi --delimiter : \
+                --preview 'bat --color=always --highlight-line {2} {1}' \
+                --preview-window 'up,60%,+{2}/3'
+    )
+    [ -n "$file" ] && helix "$file:$line"
+}
+
 eval "$(starship init zsh)"
