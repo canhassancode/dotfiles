@@ -8,6 +8,15 @@
 
 [core]
 	excludesfile = ~/.gitignore_global
+	pager = delta
+[interactive]
+	diffFilter = delta --color-only
+[delta]
+	navigate = true
+	line-numbers = true
+	side-by-side = true
+[diff]
+	colorMoved = default
 [include]
 	path = ~/.gitconfig.local  # Include local config for personal details
 

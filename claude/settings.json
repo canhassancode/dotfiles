@@ -39,6 +39,9 @@
       "Bash(pnpm test:*)",
       "Bash(pnpm lint:*)",
       "Bash(pnpm type-check:*)",
+      "Bash(npx @biomejs/biome:*)",
+      "Bash(python3 *gauntlet/run.py:*)",
+      "Bash(python3 *gauntlet/crap-guard.py:*)",
       "Bash(npx playwright:*)",
       "Bash(pnpm exec playwright:*)",
       "Bash(npm run:*)",
@@ -73,7 +76,6 @@
       "Bash(node *)",
       "Bash(npx *)",
       "Bash(pnpm install *)",
-      "Bash(pnpm exec *)",
       "Bash(git push *)"
     ],
     "defaultMode": "auto"
@@ -132,13 +134,40 @@
         "hooks": [
           {
             "type": "command",
+            "command": "$HOME/.claude/hooks/gauntlet-pr-gate.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/gauntlet-protected-paths.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Grep|Glob|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/gauntlet-qa-read-guard.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
             "command": "$HOME/.claude/hooks/sleep-guard.sh"
           }
         ]
       }
     ]
   },
-  "disableWorkflows": true,
+  "disableWorkflows": false,
   "disableArtifact": true,
   "statusLine": {
     "type": "command",
@@ -147,5 +176,7 @@
   "effortLevel": "medium",
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
-  "theme": "auto"
+  "skipWorkflowUsageWarning": true,
+  "theme": "auto",
+  "remoteControlAtStartup": false
 }
