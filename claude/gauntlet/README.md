@@ -34,13 +34,14 @@ QA is the only stage that shares no assumptions with the stages that wrote the c
 | `serve.interval` | `qa` guard | Seconds between polls (default 1) |
 | `serve.warmup` | `qa` guard | Requests sent once, in order, straight to `serve.url` after every probe is ready and before the script runs — `"POST /api/auth/login"` or `{"method", "path", "body", "timeout"}`. Their statuses are logged and never judged (a 401 is a fine warm-up); one that never answers is exit 2. They bypass the relay, so they add nothing to wire evidence. Needed only when a route builds on first use and no probe can cross it unauthenticated |
 | `serve.upstreamTimeout` | `qa` guard | Seconds the relay waits on the served system per request (default 60). Set it above any gateway timeout in the path so a real 504 arrives as the product's, not as the relay's |
+| `serve.surfaces` | `spec` + `qa` guards | A monorepo serving more than one surface declares them here, keyed by name, each `{"url", "ready", "paths"}`; `serve.run` (shared) starts them all and `url`/`ready` move under each surface. `paths` is the glob a surface's acceptance tests live under. The `spec` guard derives which surfaces a ticket crosses from where its matched acceptance tests sit — the observation seam, not the diff, so a vertical slice touching many modules but asserting through one page selects one surface — and writes `.gauntlet/surfaces.json`. The `qa` guard fronts a relay per selected surface and hands the script `GAUNTLET_URL_<SURFACE>` (plus `GAUNTLET_URL` when exactly one is selected). Wire evidence is per surface: any selected surface with zero requests is red. Omit `surfaces` for a single-surface repo — `serve.url` then behaves exactly as before |
 
 The relay is a witness, not a client: it never retries, and when it cannot relay at all it answers **599** with an `X-Gauntlet-Relay-Error` header naming why — a status the product will not produce, so a QA script reading status codes can tell "the harness gave up" from "the product failed". Four phases in order — start, ready, warm-up, verdict — and only the verdict phase can go exit 1.
 
 The QA stage calibrates its script with `run.py qa-dry <nonce>` before the guard judges it: same server, same relay, plus the script's full output, no receipt, three per nonce. The guard then serves fresh and runs the script itself. A port that already has a listener when the guard starts is an environment failure (exit 2, `serve.run` not started) — an orphaned dev server would otherwise be judged as the product.
 | `protectedPaths` | ask-gate hook | Measurement apparatus and infra a stage may only edit with a human's approval |
 
-`serve` absent → QA skipped. `.gauntlet/` is gitignored globally; the config is per machine.
+`serve` absent → QA skipped. With `serve.surfaces` declared, a ticket whose criteria cross no declared surface is red (not skipped) — the criteria sit outside every surface's `paths`, which is a misconfiguration to fix, not a verification to waive. `.gauntlet/` is gitignored globally; the config is per machine.
 
 ## `.gauntlet/ticket.json` — the one input
 
@@ -50,7 +51,7 @@ Nothing in `.gauntlet/` is cleared by the harness: `teardown` is only the repo's
 
 ## The conduit seam
 
-The workflow script has no shell or filesystem, so a cheap agent (the conduit) runs each guard and copies its JSON line back. Only the **branch fields** — `nonce`, `guard`, `exitCode`, `receipt` — decide transitions; they are `required` in the schema and receipt-covered, so a drop is caught and retried. Everything else (`tail`, `offenders`, `problems`, `failed`, `log`) is a **feedback field**: forwarded into the next stage's prompt, optional by contract, and tolerated if lost. Nothing large crosses the conduit; large things stay on disk and the stage reads them.
+The workflow script has no shell or filesystem, so a cheap agent (the conduit) runs a guard command and copies its JSON line back. A conduit spawn costs ~18K tokens whatever it runs, so the transitions after specify, coder and cleaner are each **one** conduit: `run.py gate <nonce> specify|code` runs the whole chain in-process and returns the most upstream red guard as `failed` plus every guard's findings (six conduits per clean run, not nineteen). Only the **branch fields** — `nonce`, `guard`, `exitCode`, `receipt`, and for a gate `failed` and `head` — decide transitions; they are `required` in the schema and receipt-covered, so a drop or a rename is caught and retried. Everything else (`tail`, `findings`, `offenders`, `problems`, QA's `failed` list, `log`) is a **feedback field**: forwarded into the next stage's prompt, optional by contract, and tolerated if lost. Nothing large crosses the conduit; large things stay on disk and the stage reads them.
 
 Rule: every live conduit failure becomes a hostile-conduit case in `gauntlet.test.mjs` before it is fixed.
 

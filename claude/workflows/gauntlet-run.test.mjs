@@ -22,14 +22,58 @@ function next(scripted) {
   return scripted.length > 1 ? scripted.shift() : scripted[0];
 }
 
-const RELAYED_FIELDS = ["nonce", "guard", "exitCode", "receipt", "head"];
+const RELAYED_FIELDS = ["nonce", "guard", "exitCode", "receipt", "head", "failed"];
 const hostileRelay = (result) => Object.fromEntries(Object.entries(result).filter(([field]) => RELAYED_FIELDS.includes(field)));
+
+const GATE_CHAINS = {
+  specify: ["clean-tree", "spec:red"],
+  code: ["clean-tree", "spec:green", "build", "coverage", "reachability", "crap", "depth"],
+};
+const GATE_STOPS_AT = ["clean-tree", "build", "coverage"];
+const gateReceipt = (nonce, exitCode, failed, head) => fnv1a32(`${SECRET}:${nonce}:${exitCode}:${failed || "-"}:${head}`);
 
 async function dryRun({ guards = {}, stages = {}, args = PREFLIGHT, hostile = false } = {}) {
   const scriptedGuards = structuredClone(guards);
   const calls = [];
   const logs = [];
+  const ran = [];
   let commits = 0;
+  const scriptedFor = (key) => {
+    ran.push(key);
+    const scripted = next(scriptedGuards[key]);
+    return typeof scripted === "number" ? { exitCode: scripted } : scripted;
+  };
+  function hostileConduit(scripted, nonce, guard) {
+    if (scripted.conduit === "fabricated") return { nonce, guard, exitCode: 0, failed: null, head: "x", receipt: "deadbeef" };
+    if (scripted.conduit === "wrong-nonce") return { nonce: "other", guard, exitCode: 0, failed: null, head: "x", receipt: gateReceipt("other", 0, null, "x") };
+    if (scripted.conduit === "dropped-head") return { nonce, guard, exitCode: 0, failed: null, receipt: gateReceipt(nonce, 0, null, "") };
+    if (scripted.conduit === "renamed-failed") return { nonce, guard, exitCode: 1, failed: "build", head: "x", receipt: gateReceipt(nonce, 1, "crap", "x") };
+    return null;
+  }
+  function runGate(nonce, chain) {
+    const findings = {};
+    let failed = null;
+    let exitCode = 0;
+    let head = "";
+    for (const key of GATE_CHAINS[chain]) {
+      const guard = key.split(":")[0];
+      let scripted = scriptedFor(key);
+      const hostile = hostileConduit(scripted, nonce, "gate");
+      if (hostile) return hostile;
+      if (guard === "coverage" && scripted.exitCode === 1) scripted = scriptedFor(key);
+      const { conduit, ...fields } = scripted;
+      if (guard === "clean-tree") {
+        head = "head" in fields ? fields.head : fields.exitCode === 0 ? `commit-${++commits}` : "dirty";
+        fields.exitCode = Math.min(fields.exitCode, 1);
+      }
+      findings[guard] = fields;
+      if (fields.exitCode === 0) continue;
+      if (failed === null) { failed = guard; exitCode = fields.exitCode; }
+      if (exitCode === 2 || GATE_STOPS_AT.includes(guard)) break;
+    }
+    const tail = Object.entries(findings).filter(([, f]) => f.exitCode !== 0).map(([g, f]) => `[${g}]\n${f.tail || ""}`).join("\n\n");
+    return { nonce, guard: "gate", exitCode, failed, head, findings, tail, receipt: gateReceipt(nonce, exitCode, failed, head) };
+  }
   async function agent(prompt, options = {}) {
     const call = { prompt, ...options };
     calls.push(call);
@@ -37,16 +81,16 @@ async function dryRun({ guards = {}, stages = {}, args = PREFLIGHT, hostile = fa
     const invocation = prompt.match(/run\.py"?\s+(\S+)\s+(\S+)(?:\s+(\S+))?/);
     if (invocation) {
       const [, guard, nonce, argument] = invocation;
-      const key = guard === "spec" ? `spec:${argument}` : guard;
-      let scripted = next(scriptedGuards[key]);
-      if (typeof scripted === "number") scripted = { exitCode: scripted };
-      if (scripted.conduit === "fabricated") return { nonce, guard, exitCode: 0, receipt: "deadbeef" };
-      if (scripted.conduit === "wrong-nonce") return { nonce: "other", guard, exitCode: 0, receipt: fnv1a32(`${SECRET}:other:0`) };
-      if (scripted.conduit === "dropped-head") return { nonce, guard, exitCode: 0, receipt: fnv1a32(`${SECRET}:${nonce}:0`) };
+      if (guard === "gate") {
+        const result = runGate(nonce, argument);
+        return hostile ? hostileRelay(result) : result;
+      }
+      const scripted = scriptedFor(guard);
+      const bad = hostileConduit(scripted, nonce, guard);
+      if (bad) return bad;
       const { conduit, ...fields } = scripted;
       const result = { nonce, guard, ...fields };
-      if (guard === "clean-tree" && !("head" in fields)) result.head = result.exitCode === 0 ? `commit-${++commits}` : "dirty";
-      result.receipt = fnv1a32(`${SECRET}:${nonce}:${result.exitCode}${result.head ? `:${result.head}` : ""}`);
+      result.receipt = fnv1a32(`${SECRET}:${nonce}:${result.exitCode}`);
       return hostile ? hostileRelay(result) : result;
     }
     if (label === "ship") return stages.ship === undefined ? { prUrl: PR_URL } : stages.ship;
@@ -54,18 +98,19 @@ async function dryRun({ guards = {}, stages = {}, args = PREFLIGHT, hostile = fa
     return typeof stage === "function" ? stage(prompt, options) : (stage ?? "done");
   }
   const outcome = await script(agent, (line) => logs.push(line), () => {}, null, null, null, args, { total: null, spent: () => 0, remaining: () => Infinity });
-  return { outcome, calls, logs, labels: calls.map((call) => call.label) };
+  return { outcome, calls, logs, ran, labels: calls.map((call) => call.label) };
 }
 
 const STAGE_LABELS = new Set(["specify", "coder", "cleaner", "qa", "ship"]);
 const stagesOf = (labels) => labels.filter((label) => STAGE_LABELS.has(label));
-const CODE_GATES = ["clean-tree", "spec:green", "build", "coverage", "reachability", "crap", "depth"];
+const conduitsOf = (labels) => labels.filter((label) => !STAGE_LABELS.has(label));
 
 test("all green: specify → coder → cleaner → qa → ship, no model before specify, and ship only with a PR URL", async () => {
   const { outcome, labels, calls } = await dryRun();
   assert.deepEqual(stagesOf(labels), ["specify", "coder", "cleaner", "qa", "ship"]);
   assert.equal(labels[0], "specify");
-  assert.deepEqual(labels, ["specify", "clean-tree", "spec:red", "coder", ...CODE_GATES, "cleaner", ...CODE_GATES, "qa", "qa-guard", "verdict", "ship", "teardown"]);
+  assert.deepEqual(labels, ["specify", "gate:specify", "coder", "gate:code", "cleaner", "gate:code", "qa", "qa-guard", "verdict", "ship", "teardown"]);
+  assert.equal(conduitsOf(labels).length, 6);
   assert.equal(outcome.outcome, "ship");
   assert.equal(outcome.prUrl, PR_URL);
   for (const stage of STAGE_LABELS) assert.equal(calls.find((call) => call.label === stage).agentType, `gauntlet-${stage}`);
@@ -108,16 +153,24 @@ test("a hostile conduit that relays only the receipt-verified fields still ships
 test("every field the workflow verifies a guard result by is one a conduit schema requires", () => {
   const verifiedFields = [...source.match(/function verified[\s\S]*?\n\}/)[0].matchAll(/result\.(\w+)/g)].map((match) => match[1]);
   const required = JSON.parse(source.match(/const guardSchema = \{[\s\S]*?required: (\[[^\]]*\])/)[1]);
-  const treeRequired = [...source.match(/const treeSchema = [^\n]*/)[0].matchAll(/"(\w+)"/g)].map((match) => match[1]);
+  const gateRequired = [...source.match(/const gateSchema = \{[\s\S]*?required: \[([^\]]*)\]/)[1].matchAll(/"(\w+)"/g)].map((match) => match[1]);
   assert.ok(verifiedFields.length >= 4);
-  for (const field of verifiedFields) assert.ok([...required, ...treeRequired].includes(field), `verified() reads ${field} but no conduit schema requires it`);
+  for (const field of verifiedFields) assert.ok([...required, ...gateRequired].includes(field), `verified() reads ${field} but no conduit schema requires it`);
 });
 
-test("clean-tree's head is receipt-covered: a conduit that drops it is retried, then escalated as harness", async () => {
+test("a gate's head is receipt-covered: a conduit that drops it is retried, then escalated as harness", async () => {
   const { outcome, labels } = await dryRun({ guards: { "clean-tree": { conduit: "dropped-head" } } });
   assert.equal(outcome.outcome, "escalate");
-  assert.equal(outcome.reason, "harness: conduit failed on clean-tree");
-  assert.equal(labels.filter((label) => label === "clean-tree").length, 3);
+  assert.equal(outcome.reason, "harness: conduit failed on gate specify");
+  assert.equal(labels.filter((label) => label === "gate:specify").length, 3);
+});
+
+test("a gate's failed guard is receipt-covered: a conduit that renames it is retried, then escalated as harness, never routed to a code stage", async () => {
+  const { outcome, labels } = await dryRun({ guards: { crap: { conduit: "renamed-failed" } } });
+  assert.equal(outcome.outcome, "escalate");
+  assert.equal(outcome.reason, "harness: conduit failed on gate code");
+  assert.equal(labels.filter((label) => label === "gate:code").length, 3);
+  assert.deepEqual(stagesOf(labels), ["specify", "coder"]);
 });
 
 test("a stage that returns with HEAD unchanged escalates at once, naming it and the re-entry command", async () => {
@@ -125,13 +178,13 @@ test("a stage that returns with HEAD unchanged escalates at once, naming it and 
   assert.equal(outcome.outcome, "escalate");
   assert.match(outcome.reason, /specify: returned with HEAD unchanged/);
   assert.equal(outcome.reenter, "/gauntlet 63 --from specify");
-  assert.deepEqual(labels, ["specify", "clean-tree", "teardown"]);
+  assert.deepEqual(labels, ["specify", "gate:specify", "teardown"]);
 });
 
 test("a retry that refuses its feedback escalates instead of re-gating", async () => {
-  const { outcome, labels } = await dryRun({ guards: { "clean-tree": [{ exitCode: 0, head: "c1" }, { exitCode: 0, head: "c1" }], "spec:red": { exitCode: 1, problems: ["mocks src/config"] } } });
+  const { outcome, labels, ran } = await dryRun({ guards: { "clean-tree": [{ exitCode: 0, head: "c1" }, { exitCode: 0, head: "c1" }], "spec:red": { exitCode: 1, problems: ["mocks src/config"] } } });
   assert.deepEqual(stagesOf(labels), ["specify", "specify"]);
-  assert.equal(labels.filter((label) => label === "spec:red").length, 1);
+  assert.equal(ran.filter((guard) => guard === "spec:red").length, 2);
   assert.match(outcome.reason, /specify: returned with HEAD unchanged/);
 });
 
@@ -173,11 +226,19 @@ test("reachability red routes to the coder naming the orphan, whether after code
   assert.match(promptOf(afterCleaner.calls, "coder", 1), /sessionClient\.ts is reached by nothing/);
 });
 
-test("crap and depth red route to the cleaner with the offenders", async () => {
+test("crap and depth both red route to the cleaner once, with both guards' offenders in the same prompt", async () => {
   const { calls, labels } = await dryRun({ guards: { crap: [{ exitCode: 1, offenders: [{ function: "handleRequest", crap: 756 }] }, 0], depth: [{ exitCode: 1, offenders: [{ file: "src/lib/index.ts", exports: 3, lines: 3, depth: 1 }] }, 0] } });
-  assert.deepEqual(stagesOf(labels), ["specify", "coder", "cleaner", "cleaner", "qa", "ship"]);
+  assert.deepEqual(stagesOf(labels), ["specify", "coder", "cleaner", "qa", "ship"]);
+  assert.equal(labels.filter((label) => label === "gate:code").length, 2);
   assert.match(promptOf(calls, "cleaner", 0), /crap guard reports these offenders[\s\S]*"crap": 756/);
-  assert.match(promptOf(calls, "cleaner", 1), /depth guard reports these offenders[\s\S]*"file": "src\/lib\/index\.ts"/);
+  assert.match(promptOf(calls, "cleaner", 0), /depth guard reports these offenders[\s\S]*"file": "src\/lib\/index\.ts"/);
+});
+
+test("a red build stops the chain: coverage, reachability, crap and depth do not run, and the coder retry carries the build output", async () => {
+  const { calls, ran } = await dryRun({ guards: { build: [{ exitCode: 1, tail: "TS2322: type error" }, 0] } });
+  const firstCodeGate = ran.slice(ran.indexOf("build"));
+  assert.deepEqual(firstCodeGate.slice(0, 2), ["build", "clean-tree"]);
+  assert.match(promptOf(calls, "coder", 1), /TS2322/);
 });
 
 test("the cleaner runs even when every gate after the coder is green", async () => {
@@ -187,7 +248,8 @@ test("the cleaner runs even when every gate after the coder is green", async () 
 
 test("coverage red retries once as a flake guard, then escalates — never routes to a code stage", async () => {
   const flake = await dryRun({ guards: { coverage: [1, 0] } });
-  assert.ok(flake.labels.includes("coverage:retry"));
+  assert.equal(flake.ran.filter((guard) => guard === "coverage").length, 3);
+  assert.equal(flake.labels.filter((label) => label === "gate:code").length, 2);
   assert.equal(flake.outcome.outcome, "ship");
   const persistent = await dryRun({ guards: { coverage: 1 } });
   assert.equal(persistent.outcome.outcome, "escalate");
@@ -227,11 +289,11 @@ test("qa skipped by config still ships; qa exit 2 escalates as harness", async (
 test("a fabricated or mis-nonced receipt is a conduit error: retried, then escalated as harness, never routed to a code stage", async () => {
   const fabricated = await dryRun({ guards: { build: { conduit: "fabricated" } } });
   assert.equal(fabricated.outcome.outcome, "escalate");
-  assert.equal(fabricated.outcome.reason, "harness: conduit failed on build");
-  assert.equal(fabricated.labels.filter((label) => label === "build").length, 3);
+  assert.equal(fabricated.outcome.reason, "harness: conduit failed on gate code");
+  assert.equal(fabricated.labels.filter((label) => label === "gate:code").length, 3);
   assert.deepEqual(stagesOf(fabricated.labels), ["specify", "coder"]);
-  const misnonced = await dryRun({ guards: { crap: { conduit: "wrong-nonce" } } });
-  assert.equal(misnonced.outcome.reason, "harness: conduit failed on crap");
+  const misnonced = await dryRun({ guards: { verdict: { conduit: "wrong-nonce" } } });
+  assert.equal(misnonced.outcome.reason, "harness: conduit failed on verdict");
 });
 
 test("per-stage caps escalate with the stage name and the last findings", async () => {

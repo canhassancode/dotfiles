@@ -13,17 +13,21 @@ A deterministic check run by `run.py` that returns an exit code the workflow bra
 _Avoid_: gate (the transition), check, test
 
 **Conduit**:
-The cheap subagent that runs one guard command and copies its JSON line back into the workflow, because the workflow script itself has no shell or filesystem.
+The cheap subagent that runs one `run.py` command and copies its JSON line back into the workflow, because the workflow script itself has no shell or filesystem. Costs ~18K tokens per spawn whatever it runs, which is why a transition is one conduit, not one per guard.
 _Avoid_: runner (that is `run.py`), relay agent
 
+**Gate**:
+The transition between two **Stages** — the guard chain `run.py gate <chain>` runs in one process and reports as one line: `failed` (the most upstream red guard, or null) and `findings` (every guard that ran). The chain stops only where the next guard would have no input (dirty tree, red build, coverage red after its retry, any exit 2); every other red keeps going so one retry prompt carries every finding. Two chains: `specify` (clean-tree, spec red) and `code` (clean-tree, spec green, build, coverage, reachability, crap, depth).
+_Avoid_: guard (one check inside a gate), gates (plural — one transition is one gate)
+
 **Receipt**:
-The hash `fnv1a32(secret:nonce:exitCode)` a guard prints, proving to the workflow that this guard ran under this nonce with this exit code; the conduit never sees the secret.
+The hash `fnv1a32(secret:nonce:exitCode)` a guard prints — for a **Gate**, `fnv1a32(secret:nonce:exitCode:failed-or-dash:head)` — proving to the workflow that this guard ran under this nonce with this result; the conduit never sees the secret.
 
 **Branch field**:
-A relayed field the workflow's control flow reads — `nonce`, `guard`, `exitCode`, `receipt`. Always `required` in the conduit schema and always receipt-covered.
+A relayed field the workflow's control flow reads — `nonce`, `guard`, `exitCode`, `receipt`, and on a **Gate** `failed` and `head`. Always `required` in the conduit schema and always receipt-covered.
 
 **Feedback field**:
-A relayed field the workflow only forwards into the next stage's prompt — `tail`, `log`, `offenders`, `problems`, `failed`. Optional by contract; a drop degrades the retry prompt, never the branch.
+A relayed field the workflow only forwards into the next stage's prompt — `tail`, `log`, `findings`, `offenders`, `problems`, QA's `failed` list. Optional by contract; a drop degrades the retry prompt, never the branch.
 
 **Ticket**:
 The single input of a run: `.gauntlet/ticket.json` = `{issue, title, body}`, where `body` carries `- [ ] Given …, when …, then …` acceptance criteria. Whatever writes that file is the ticket's origin; the gauntlet does not know which.
@@ -42,22 +46,26 @@ Everything before the first **Stage** — resolving the **Ticket** by origin, mi
 **Depth**:
 The guard on every new production file: implementation lines divided by exported symbols, red below a ceiling. Ousterhout's definition operationalised — it fails pass-throughs and barrels, never a design. Red routes to the cleaner, like `crap`.
 
+**Surface**:
+One served address a monorepo exposes — the web app, the API, a BFF — declared under `serve.surfaces` keyed by name, each with its own `url`, `ready` probes, and `paths` glob. The **Surface** a ticket crosses is derived deterministically from where its matched acceptance tests sit (the observation seam), not from the diff — a vertical slice touching many modules but asserting through one page selects one surface. The `spec` guard writes the selected set to `.gauntlet/surfaces.json`; `qa_guard` fronts a relay per surface. A single-surface repo declares no `surfaces` and keeps a flat `serve.url`.
+
 **Wire evidence**:
-The counting relay `qa_guard` places in front of `serve.url`; the QA script receives the relay as `GAUNTLET_URL`, and zero requests through it is red. The only proof of "against the running system" that a **Stage** cannot author.
+The counting relay `qa_guard` places in front of each selected **Surface** (`serve.url` when a repo declares none); the QA script receives each as `GAUNTLET_URL_<SURFACE>` (or `GAUNTLET_URL` when one is selected), and zero requests through any selected surface's relay is red. The only proof of "against the running system" that a **Stage** cannot author.
 
 **Verdict**:
 `.gauntlet/verdict-<HEAD>.json` — the clean-review artefact keyed to a commit that the pre-PR hook demands before `gh pr create`.
 
 ## Relationships
 
-- A **Stage** never runs a **Guard**; a **Conduit** runs exactly one **Guard** per call
+- A **Stage** never runs a **Guard**; a **Conduit** runs exactly one `run.py` command per call — a whole **Gate**, or a single **Guard** (qa, verdict, teardown)
 - Every **Guard** result carries a **Receipt**; the workflow discards any result whose receipt does not verify and retries the **Conduit**
 - **Branch fields** decide transitions; **Feedback fields** ride into the next **Stage** prompt
 - Every **Stage** reads the **Ticket** from disk; only the `ticket` **Guard** writes it
 - `specify` maps the codebase first through a read-only exploration sub-agent (pointers, never quoted code; `CONTEXT.md` is its vocabulary when present) and returns, per test, the **Edge** and the existing module it drives — the claim **Reachability** later checks against the diff
 - A run ends in `ship` only when a **Verdict** exists for HEAD
 - The coder climbs the `/tdd` ladder (existing module > stdlib > platform > dependency > one-liner > new code); the cleaner may leave the diff for one pass — merging a new module into the existing one with the same responsibility
-- **Reachability** and **Depth** run with the coder and cleaner gates; a **Stage** that returns with HEAD unchanged has refused its feedback and escalates without re-gating
+- **Reachability** and **Depth** run inside the `code` **Gate**; a **Stage** that returns with HEAD unchanged has refused its feedback and escalates without re-gating
+- A **Gate** routes on `failed` alone: clean-tree → commit and retry; spec/build → the same stage; coverage → escalate; reachability → coder; crap/depth → cleaner. The findings of every red guard ride into that prompt together
 
 ## Example dialogue
 
@@ -76,4 +84,6 @@ The counting relay `qa_guard` places in front of `serve.url`; the QA script rece
 - **QA passing without touching the served system** (run #63: six PASS lines, zero HTTP requests, SSO expired unnoticed) → resolved 2026-08-27: every other guard branches on machine-produced evidence; QA branched on text the stage wrote. **Wire evidence** closes it; a proxy on the script's text would not.
 - **A parallel module is not a shallow module** — `sessionClient.ts` was deep (two exports over single-flight refresh) but a sibling of `client.ts`; **Reachability** catches the sibling, **Depth** catches the pass-through. Neither alone would have.
 - **Re-entry** — an escalated run resumes with `/gauntlet <ticket> --from <stage>`; `resumeFromRunId` cannot, because identical calls replay their cached failure.
+- **One conduit per guard** (19 spawns, 349K of run #109's 536K tokens, for 19 shell commands) → resolved 2026-08-28: the chain moved into `run.py gate`; the JS branches on the same fields, once. Short-circuit was dropped with it — a retry round costs an Opus stage, a guard costs seconds, so any red that leaves the next guard's input intact collects it.
 - **Teardown** is the repo's command only; the harness never clears `.gauntlet/`. The next run overwrites `ticket.json` and `run-secret`; verdicts are keyed by SHA and inert unless HEAD returns to that SHA.
+- **Single-surface `serve`** forced a per-ticket config flip on monorepos (dotfiles#57: brushfeed serves web `:4321` + core-api `:3000` from one `dev:headless`) → resolved 2026-08-28: `serve.surfaces` keyed by name, the crossed **Surface** derived from where a ticket's matched acceptance tests sit. Selecting from the *diff* was rejected — a vertical slice's diff spans web+api even when it asserts through the page alone, so it would demand traffic to an API relay the script never hits and false-red; the acceptance test's own location is the observation seam and never over-selects. No new artefact carries it: the test's `file` is already in the `spec` guard's jest report.

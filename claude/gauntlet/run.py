@@ -17,6 +17,18 @@ the workflow as args: {"ok", "repoRoot", "headSha", "branch", "secret", "ticket"
 "failed"?, "tail"?}. Every stage and later guard reads the ticket from disk; it never
 crosses a conduit.
 
+`gate <nonce> specify|code` runs one transition's whole guard chain in this process and
+prints one line — `specify` = clean-tree, spec red; `code` = clean-tree, spec green, build,
+coverage (retried once on exit 1), reachability, crap, depth. Each guard logs under
+<nonce>-<guard>. The chain stops only where the next guard would have no input: a dirty
+tree, a red build, coverage still red after its retry, or any exit 2. Every other red keeps
+going, so one retry prompt carries every finding at once. Adds {"failed": the most upstream
+red guard or null, "head", "findings": {guard: {exitCode, tail, offenders?, problems?}}};
+`exitCode` is that guard's. `failed` and `head` are branch fields — the receipt signs
+secret:nonce:exitCode:failed-or-dash:head — so a conduit that renames the red guard is
+caught the same way as one that drops HEAD. A dirty tree is exit 1 here (the stage's
+fault — commit), not clean-tree's standalone 2.
+
 `reachability <nonce>` requires every production file the branch adds to be an edge
 (config.edges globs — routes, pages, handlers the runtime reaches by itself) or to be
 imported, transitively, from an edge or a pre-existing file. Red names the orphans.
@@ -208,6 +220,18 @@ def match_criteria(criteria: list[str], tests: list[dict]) -> tuple[dict[str, di
     return matched, problems
 
 
+def surfaces_for(root: Path, matched: dict, serve: dict | None) -> list[str]:
+    surfaces = (serve or {}).get("surfaces") or {}
+    selected: set[str] = set()
+    for test in matched.values():
+        file = test["file"]
+        path = os.path.relpath(file, root) if os.path.isabs(file) else file
+        for name, surface in surfaces.items():
+            if fnmatch(path, surface.get("paths", "")):
+                selected.add(name)
+    return sorted(selected)
+
+
 def source_mocks(root: Path, pattern: str, source_paths: list[str]) -> list[str]:
     prefixes = ALIAS_PREFIXES + tuple(f"{path.rstrip('/')}/" for path in source_paths)
     found: list[str] = []
@@ -242,6 +266,9 @@ def spec_guard(mode: str, root: Path, config: dict, log: Path) -> dict:
         return {"exitCode": 2, "criteria": criteria, "tail": log.read_text()[-TAIL_CHARS:]}
     tests = acceptance_tests(json.loads(output.read_text()))
     matched, problems = match_criteria(criteria, tests)
+    serve = config.get("serve")
+    if serve and serve.get("surfaces") is not None:
+        (root / ".gauntlet" / "surfaces.json").write_text(json.dumps(surfaces_for(root, matched, serve)))
     wanted = "failed" if mode == "red" else "passed"
     for criterion, test in matched.items():
         if test["status"] != wanted:
@@ -410,8 +437,8 @@ def describe_probe(probe: dict) -> str:
     return f"{probe['url']} expecting {expected}"
 
 
-def wait_for_ready(serve: dict) -> list[str]:
-    probes = ready_probes(serve)
+def wait_for_ready(serve: dict, probes: list[dict] | None = None) -> list[str]:
+    probes = ready_probes(serve) if probes is None else probes
     startup = float(serve.get("startup", serve.get("timeout", SERVE_TIMEOUT)))
     interval = float(serve.get("interval", READY_INTERVAL))
     successes = int(serve.get("successes", READY_SUCCESSES))
@@ -430,8 +457,11 @@ def wait_for_ready(serve: dict) -> list[str]:
 
 
 def warm_up(serve: dict, sink) -> str | None:
+    items = serve.get("warmup", [])
+    if not items:
+        return None
     base = serve["url"].rstrip("/")
-    for item in serve.get("warmup", []):
+    for item in items:
         if isinstance(item, str):
             method, _, path = item.partition(" ")
             item = {"method": method, "path": path}
@@ -534,6 +564,29 @@ def listeners(port: int) -> str:
     return probe.stdout.strip()
 
 
+def env_suffix(name: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "_", name).upper()
+
+
+def selected_targets(root: Path, serve: dict) -> tuple[list[tuple[str, dict]], str | None]:
+    surfaces = serve.get("surfaces")
+    if not surfaces:
+        return [("", serve)], None
+    selection = root / ".gauntlet" / "surfaces.json"
+    selected = json.loads(selection.read_text()) if selection.exists() else []
+    if not selected:
+        return [], "no acceptance criterion maps to a served surface — check config.serve.surfaces paths against the acceptance test locations"
+    inherited = {key: value for key, value in serve.items() if key != "surfaces"}
+    return [(name, {**inherited, **surfaces[name]}) for name in selected], None
+
+
+def starvation_message(starved: list[str]) -> str:
+    named = [name for name in starved if name]
+    if named:
+        return f"surfaces {named} received 0 requests to the served system through GAUNTLET_URL_<surface> — the script proved nothing against them from the outside:\n"
+    return "QA made 0 requests to the served system through GAUNTLET_URL — the script proved nothing from the outside:\n"
+
+
 def qa_guard(root: Path, config: dict, nonce: str, log: Path, full_output: bool = False) -> dict:
     serve = config.get("serve")
     if not serve:
@@ -541,32 +594,47 @@ def qa_guard(root: Path, config: dict, nonce: str, log: Path, full_output: bool 
     script = root / ".gauntlet" / "qa" / f"{nonce}.sh"
     if not script.exists():
         return {"exitCode": 2, "tail": f"no QA script at {script.relative_to(root)}"}
-    port = urllib.parse.urlparse(serve["url"]).port
-    if port and listener_on(port):
-        message = f"environment: 127.0.0.1:{port} already has a listener, so serve.run was not started — stop it (an orphaned dev server from an earlier run?) and re-enter:\n{listeners(port)}"
-        log.write_text(message)
-        return {"exitCode": 2, "tail": message}
+    targets, selection_error = selected_targets(root, serve)
+    if selection_error:
+        return {"exitCode": 1, "tail": selection_error}
+    for _, target in targets:
+        port = urllib.parse.urlparse(target["url"]).port
+        if port and listener_on(port):
+            message = f"environment: 127.0.0.1:{port} already has a listener, so serve.run was not started — stop it (an orphaned dev server from an earlier run?) and re-enter:\n{listeners(port)}"
+            log.write_text(message)
+            return {"exitCode": 2, "tail": message}
     with log.open("w") as sink:
         sink.write(f"$ {serve['run']}\n")
         sink.flush()
         server = subprocess.Popen(["bash", "-c", serve["run"]], cwd=root, stdout=sink, stderr=subprocess.STDOUT, start_new_session=True)
-        relay = WireEvidence(serve["url"], float(serve.get("upstreamTimeout", UPSTREAM_TIMEOUT)))
-        threading.Thread(target=relay.serve_forever, daemon=True).start()
+        relays: dict[str, WireEvidence] = {}
+        env = {**os.environ}
+        for name, target in targets:
+            relay = WireEvidence(target["url"], float(target.get("upstreamTimeout", UPSTREAM_TIMEOUT)))
+            threading.Thread(target=relay.serve_forever, daemon=True).start()
+            relays[name] = relay
+            if name:
+                env[f"GAUNTLET_URL_{env_suffix(name)}"] = relay.url
+        if len(relays) == 1:
+            env["GAUNTLET_URL"] = next(iter(relays.values())).url
         try:
-            unready = wait_for_ready(serve)
+            probes = [probe for _, target in targets for probe in ready_probes(target)]
+            unready = wait_for_ready(serve, probes)
             if unready:
                 startup = serve.get("startup", serve.get("timeout", SERVE_TIMEOUT))
                 return {"exitCode": 2, "tail": f"environment: not ready within the {startup}s startup window — " + "; ".join(unready) + ":\n" + log.read_text()[-TAIL_CHARS:]}
             warmup_failure = warm_up(serve, sink)
             if warmup_failure:
                 return {"exitCode": 2, "tail": f"environment: {warmup_failure}:\n" + log.read_text()[-TAIL_CHARS:]}
-            sink.write(f"$ GAUNTLET_URL={relay.url} bash {script.relative_to(root)}\n")
+            urls = " ".join(f"{key}={value}" for key, value in env.items() if key.startswith("GAUNTLET_URL"))
+            sink.write(f"$ {urls} bash {script.relative_to(root)}\n")
             sink.flush()
-            run = subprocess.run(["bash", str(script)], cwd=root, capture_output=True, text=True, env={**os.environ, "GAUNTLET_URL": relay.url})
+            run = subprocess.run(["bash", str(script)], cwd=root, capture_output=True, text=True, env=env)
             sink.write(run.stdout + run.stderr)
         finally:
-            relay.shutdown()
-            relay.server_close()
+            for relay in relays.values():
+                relay.shutdown()
+                relay.server_close()
             os.killpg(server.pid, signal.SIGTERM)
             try:
                 server.wait(timeout=5)
@@ -576,13 +644,14 @@ def qa_guard(root: Path, config: dict, nonce: str, log: Path, full_output: bool 
     passed = [criterion for status, criterion in verdicts if status == "PASS"]
     failed = [criterion for status, criterion in verdicts if status == "FAIL"]
     output = (run.stdout + run.stderr)[-TAIL_CHARS:]
-    result = {"passed": passed, "failed": failed, "requests": relay.requests}
+    result = {"passed": passed, "failed": failed, "requests": sum(relay.requests for relay in relays.values())}
     if full_output:
         result["output"] = run.stdout + run.stderr
     if not verdicts:
         return {**result, "exitCode": 1, "tail": "QA script printed no PASS/FAIL lines:\n" + output}
-    if relay.requests == 0:
-        return {**result, "exitCode": 1, "tail": "QA made 0 requests to the served system through GAUNTLET_URL — the script proved nothing from the outside:\n" + output}
+    starved = [name for name, relay in relays.items() if relay.requests == 0]
+    if starved:
+        return {**result, "exitCode": 1, "tail": starvation_message(starved) + output}
     return {**result, "exitCode": 1 if failed else 0, "tail": output}
 
 
@@ -625,10 +694,49 @@ def write_ticket(root: Path, ref: str) -> dict:
     return {"exitCode": 0}
 
 
+GATE_CHAINS = {
+    "specify": (("clean-tree", None), ("spec", "red")),
+    "code": (("clean-tree", None), ("spec", "green"), ("build", None), ("coverage", None), ("reachability", None), ("crap", None), ("depth", None)),
+}
+GATE_STOPS_AT = ("clean-tree", "build", "coverage")
+GATE_FINDING_FIELDS = ("exitCode", "tail", "log", "offenders", "problems", "criteria")
+
+
+def gate_guard(chain: str, nonce: str, root: Path, config: dict) -> dict:
+    if chain not in GATE_CHAINS:
+        return {"exitCode": 2, "failed": None, "head": git(root, "rev-parse", "HEAD"), "findings": {}, "tail": f"gate chain must be one of {', '.join(GATE_CHAINS)}"}
+    findings: dict = {}
+    failed = None
+    exit_code = 0
+    head = ""
+    for guard, argument in GATE_CHAINS[chain]:
+        result = guard_result(guard, f"{nonce}-{guard}", argument, root, config)
+        if guard == "coverage" and result["exitCode"] == 1:
+            result = guard_result(guard, f"{nonce}-{guard}-retry", argument, root, config)
+        if guard == "clean-tree":
+            head = result["head"]
+            result["exitCode"] = min(result["exitCode"], 1)
+        findings[guard] = {field: result[field] for field in GATE_FINDING_FIELDS if field in result}
+        if result["exitCode"] == 0:
+            continue
+        if failed is None:
+            failed = guard
+            exit_code = result["exitCode"]
+        if exit_code == 2 or guard in GATE_STOPS_AT:
+            break
+    red = [guard for guard, finding in findings.items() if finding["exitCode"] != 0]
+    tail = "\n\n".join(f"[{guard}]\n{findings[guard].get('tail', '')}" for guard in red)
+    return {"exitCode": exit_code, "failed": failed, "head": head, "findings": findings, "tail": tail}
+
+
 def guard_result(guard: str, nonce: str, argument: str | None, root: Path, config: dict) -> dict:
     runs = root / ".gauntlet" / "runs"
     runs.mkdir(parents=True, exist_ok=True)
     result: dict = {"nonce": nonce, "guard": guard}
+
+    if guard == "gate":
+        result.update(gate_guard(argument or "", nonce, root, config))
+        return result
 
     if guard == "ticket":
         result.update(write_ticket(root, argument or ""))
@@ -735,13 +843,18 @@ def main(argv: list[str]) -> int:
     return emit(guard_result(guard, nonce, argument, root, json.loads(config_file.read_text())), secret)
 
 
-def receipt(secret: str, nonce: str, exit_code: int, head: str | None = None) -> str:
-    return fnv1a32(f"{secret}:{nonce}:{exit_code}" + (f":{head}" if head else ""))
+def receipt(secret: str, nonce: str, exit_code: int, head: str | None = None, failed: str | None = None, gate: bool = False) -> str:
+    signed = f"{secret}:{nonce}:{exit_code}"
+    if gate:
+        signed += f":{failed or '-'}"
+    if head:
+        signed += f":{head}"
+    return fnv1a32(signed)
 
 
 def emit(result: dict, secret: str) -> int:
     if not result.pop("dry", False):
-        result["receipt"] = receipt(secret, result["nonce"], result["exitCode"], result.get("head"))
+        result["receipt"] = receipt(secret, result["nonce"], result["exitCode"], result.get("head"), result.get("failed"), result["guard"] == "gate")
     print(json.dumps(result))
     return 0
 

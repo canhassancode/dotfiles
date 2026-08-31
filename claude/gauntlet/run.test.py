@@ -520,6 +520,106 @@ class QaGuardMoreTests(unittest.TestCase):
         self.assertTrue(result["skipped"])
 
 
+def two_surface_serve(web_port: int, api_port: int) -> dict:
+    run = f"python3 -m http.server {web_port} --bind 127.0.0.1 & python3 -m http.server {api_port} --bind 127.0.0.1 & wait"
+    return {
+        "run": run,
+        "timeout": 10,
+        "surfaces": {
+            "web": {"url": f"http://127.0.0.1:{web_port}/", "paths": "modules/web/**"},
+            "api": {"url": f"http://127.0.0.1:{api_port}/", "paths": "modules/core-api/**"},
+        },
+    }
+
+
+class SurfaceQaRepo(GauntletRepo):
+    def __init__(self, script: str, serve: dict, selected: list[str] | None):
+        super().__init__({"build": "true", "serve": serve})
+        os.makedirs(os.path.join(self.root, ".gauntlet", "qa"))
+        with open(os.path.join(self.root, ".gauntlet", "qa", "n1.sh"), "w") as f:
+            f.write(script)
+        if selected is not None:
+            with open(os.path.join(self.root, ".gauntlet", "surfaces.json"), "w") as f:
+                json.dump(selected, f)
+
+
+class SurfaceDerivationTests(unittest.TestCase):
+    SERVE = {"surfaces": {"web": {"paths": "modules/web/**"}, "api": {"paths": "modules/core-api/**"}}}
+
+    def matched(self, *files: str) -> dict:
+        return {f"c{index}": {"file": file} for index, file in enumerate(files)}
+
+    def test_a_web_acceptance_test_selects_the_web_surface(self):
+        matched = self.matched("modules/web/src/pages/profile.acceptance.spec.ts")
+        self.assertEqual(run.surfaces_for(run.Path("/r"), matched, self.SERVE), ["web"])
+
+    def test_an_api_acceptance_test_selects_the_api_surface(self):
+        matched = self.matched("modules/core-api/src/routes/user/current-user.acceptance.spec.ts")
+        self.assertEqual(run.surfaces_for(run.Path("/r"), matched, self.SERVE), ["api"])
+
+    def test_a_slice_crossing_both_seams_selects_both_surfaces(self):
+        matched = self.matched("modules/web/src/pages/profile.acceptance.spec.ts", "modules/core-api/src/routes/user/x.acceptance.spec.ts")
+        self.assertEqual(run.surfaces_for(run.Path("/r"), matched, self.SERVE), ["api", "web"])
+
+    def test_a_test_under_no_surface_selects_nothing(self):
+        matched = self.matched("modules/database/src/migrate.acceptance.spec.ts")
+        self.assertEqual(run.surfaces_for(run.Path("/r"), matched, self.SERVE), [])
+
+    def test_an_absolute_test_path_is_relativised_before_matching(self):
+        matched = self.matched("/r/modules/web/src/pages/profile.acceptance.spec.ts")
+        self.assertEqual(run.surfaces_for(run.Path("/r"), matched, self.SERVE), ["web"])
+
+
+class SurfaceSelectionTests(unittest.TestCase):
+    def test_single_surface_ticket_fronts_only_the_selected_surface_via_gauntlet_url(self):
+        web, api = free_port(), free_port()
+        script = 'curl -sf "$GAUNTLET_URL" >/dev/null && echo "PASS Given the api, when fetched, then it answers" || echo "FAIL Given the api, when fetched, then it answers"\n'
+        with SurfaceQaRepo(script, two_surface_serve(web, api), ["api"]):
+            result = invoke("qa", "n1")
+            web_open, api_open = port_is_open(web), port_is_open(api)
+        self.assertEqual(result["exitCode"], 0, result)
+        self.assertEqual(result["passed"], ["Given the api, when fetched, then it answers"])
+        self.assertEqual(result["requests"], 1)
+        self.assertFalse(web_open)
+        self.assertFalse(api_open)
+
+    def test_criteria_matching_no_surface_is_a_code_failure(self):
+        web, api = free_port(), free_port()
+        with SurfaceQaRepo('echo "PASS x"\n', two_surface_serve(web, api), []):
+            result = invoke("qa", "n1")
+        self.assertEqual(result["exitCode"], 1)
+        self.assertIn("no acceptance criterion maps to a served surface", result["tail"])
+
+    def test_a_vertical_slice_fronts_every_selected_surface_with_a_per_surface_url(self):
+        web, api = free_port(), free_port()
+        script = (
+            'curl -sf "$GAUNTLET_URL_WEB" >/dev/null && echo "PASS Given the page, when visited, then it renders" || echo "FAIL Given the page, when visited, then it renders"\n'
+            'curl -sf "$GAUNTLET_URL_API" >/dev/null && echo "PASS Given the route, when called, then it answers" || echo "FAIL Given the route, when called, then it answers"\n'
+        )
+        with SurfaceQaRepo(script, two_surface_serve(web, api), ["web", "api"]):
+            result = invoke("qa", "n1")
+        self.assertEqual(result["exitCode"], 0, result)
+        self.assertEqual(sorted(result["passed"]), ["Given the page, when visited, then it renders", "Given the route, when called, then it answers"])
+        self.assertEqual(result["requests"], 2)
+
+    def test_a_selected_surface_left_untouched_is_a_code_failure_naming_it(self):
+        web, api = free_port(), free_port()
+        script = 'curl -sf "$GAUNTLET_URL_WEB" >/dev/null && echo "PASS Given the page, when visited, then it renders"\n'
+        with SurfaceQaRepo(script, two_surface_serve(web, api), ["web", "api"]):
+            result = invoke("qa", "n1")
+        self.assertEqual(result["exitCode"], 1)
+        self.assertIn("api", result["tail"])
+        self.assertIn("0 requests to the served system", result["tail"])
+
+    def test_readiness_only_probes_the_selected_surfaces(self):
+        web = free_port()
+        serve = two_surface_serve(web, 1)
+        script = 'curl -sf "$GAUNTLET_URL" >/dev/null && echo "PASS Given the web, when fetched, then it answers"\n'
+        with SurfaceQaRepo(script, serve, ["web"]):
+            result = invoke("qa", "n1")
+        self.assertEqual(result["exitCode"], 0, result)
+
+
 def commit(root: str, message: str) -> str:
     subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", "add", "-A"], cwd=root, check=True)
     subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", message], cwd=root, check=True)
@@ -718,6 +818,86 @@ class VerdictGuardTests(unittest.TestCase):
                 verdict = json.load(f)
         self.assertEqual(result["exitCode"], 0)
         self.assertEqual(verdict, {"sha": sha, "clean": True, "source": "gauntlet"})
+
+
+ACCEPTANCE = {"acceptance": {"run": "cp results.json acceptance.json", "output": "acceptance.json", "pattern": "tests/*.acceptance.spec.ts"}}
+BARREL = "export { GET } from './route';\nexport { refresh } from './refresh';\n"
+
+
+class GateRepo(BranchRepo):
+    """A committed feature branch with a green acceptance seam, so the code gate reaches the guards past spec."""
+
+    def __init__(self, added: dict[str, str], config: dict | None = None):
+        baseline = {
+            "src/app.ts": "export {};\n",
+            "tests/session.acceptance.spec.ts": "describe('Session refresh', () => {});\n",
+            "results.json": json.dumps(jest_results({CRITERIA[0]: "passed"})),
+        }
+        super().__init__(baseline, added, {**ACCEPTANCE, **(config or {})})
+        with open(os.path.join(self.root, ".gauntlet", "ticket.json"), "w") as f:
+            json.dump({"issue": "63", "title": "t", "body": f"- [ ] {CRITERIA[0]}"}, f)
+
+
+class GateGuardTests(unittest.TestCase):
+    def test_two_reds_past_a_passing_build_both_reach_the_findings_and_the_most_upstream_names_failed(self):
+        with GateRepo({"src/lib/index.ts": BARREL}) as repo:
+            result = invoke("gate", "n1", "code")
+        self.assertEqual(result["failed"], "reachability")
+        self.assertEqual(result["exitCode"], 1)
+        self.assertEqual(result["head"], repo.head)
+        self.assertEqual(sorted(g for g, f in result["findings"].items() if f["exitCode"] != 0), ["depth", "reachability"])
+        self.assertIn("src/lib/index.ts is reached by nothing", result["findings"]["reachability"]["problems"][0])
+        self.assertEqual(result["findings"]["depth"]["offenders"][0]["file"], "src/lib/index.ts")
+        self.assertEqual(result["receipt"], run.fnv1a32(f"{SECRET}:n1:1:reachability:{repo.head}"))
+
+    def test_red_build_stops_the_chain_before_coverage_reachability_crap_and_depth(self):
+        with GateRepo({"src/lib/index.ts": BARREL}, {"build": "echo 'TS2322: type error'; exit 1"}):
+            result = invoke("gate", "n1", "code")
+        self.assertEqual(result["failed"], "build")
+        self.assertEqual(result["exitCode"], 1)
+        self.assertEqual(list(result["findings"]), ["clean-tree", "spec", "build"])
+        self.assertIn("TS2322", result["findings"]["build"]["tail"])
+        self.assertIn("TS2322", result["tail"])
+
+    def test_coverage_red_is_retried_once_then_stops_the_chain_as_failed_coverage(self):
+        coverage = {"coverage": [{"run": "echo attempt >> attempts.log; exit 1", "output": "coverage/coverage-final.json"}]}
+        with GateRepo({"src/lib/index.ts": BARREL}, coverage) as repo:
+            result = invoke("gate", "n1", "code")
+            with open(os.path.join(repo.root, "attempts.log")) as f:
+                attempts = f.read().count("attempt")
+        self.assertEqual(result["failed"], "coverage")
+        self.assertEqual(attempts, 2)
+        self.assertNotIn("reachability", result["findings"])
+
+    def test_dirty_tree_is_failed_clean_tree_at_exit_1_and_nothing_else_runs(self):
+        with GateRepo({"src/lib/index.ts": BARREL}) as repo:
+            with open(os.path.join(repo.root, "src", "app.ts"), "a") as f:
+                f.write("export const dirty = 1;\n")
+            result = invoke("gate", "n1", "code")
+        self.assertEqual(result["failed"], "clean-tree")
+        self.assertEqual(result["exitCode"], 1)
+        self.assertEqual(list(result["findings"]), ["clean-tree"])
+        self.assertEqual(result["receipt"], run.fnv1a32(f"{SECRET}:n1:1:clean-tree:{repo.head}"))
+
+    def test_all_green_signs_a_dash_for_failed(self):
+        with GateRepo({"src/route.ts": DEEP}, {"edges": ["src/route.ts"]}) as repo:
+            result = invoke("gate", "n1", "code")
+        self.assertIsNone(result["failed"], result)
+        self.assertEqual(result["exitCode"], 0)
+        self.assertEqual(result["receipt"], run.fnv1a32(f"{SECRET}:n1:0:-:{repo.head}"))
+
+    def test_specify_chain_is_clean_tree_then_spec_red(self):
+        with GateRepo({"src/route.ts": ROUTE}) as repo:
+            result = invoke("gate", "n1", "specify")
+        self.assertEqual(list(result["findings"]), ["clean-tree", "spec"])
+        self.assertEqual(result["failed"], "spec")
+        self.assertIn("expected failed in red mode but was passed", result["findings"]["spec"]["problems"][0])
+
+    def test_unknown_chain_is_operational(self):
+        with GateRepo({}):
+            result = invoke("gate", "n1", "harden")
+        self.assertEqual(result["exitCode"], 2)
+        self.assertIn("gate chain must be one of", result["tail"])
 
 
 if __name__ == "__main__":
