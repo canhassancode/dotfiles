@@ -18,7 +18,11 @@ for stage in specify coder cleaner qa ship; do
   frontmatter "$f" | grep -q "^name: gauntlet-$stage$" && ok "$f name" || ko "$f name"
   if [ "$stage" = specify ]; then has "$f" tools Agent; else has "$f" disallowedTools Agent; fi
   grep -q 'gh issue view' "$f" && ko "$f mentions gh issue view" || ok "$f never asks for the ticket itself"
-  grep -q 'run\.py' "$f" && ko "$f mentions run.py" || ok "$f never sees the runner"
+  if [ "$stage" = qa ]; then
+    grep 'run\.py' "$f" | grep -qv 'qa-dry' && ko "$f mentions run.py beyond qa-dry" || ok "$f only sees the runner for qa-dry calibration"
+  else
+    grep -q 'run\.py' "$f" && ko "$f mentions run.py" || ok "$f never sees the runner"
+  fi
 done
 
 has gauntlet-specify.md tools Write;   lacks gauntlet-specify.md tools Edit

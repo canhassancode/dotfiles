@@ -79,7 +79,7 @@ class FormatTests(unittest.TestCase):
             path = os.path.join(tmp, "cov.json")
             with open(path, "w") as handle:
                 json.dump({"files": {"m.py": {"executed_lines": [1], "missing_lines": [2]}}}, handle)
-            index = guard.load_coverage(path, "auto")
+            index = guard.load_coverage([path], "auto")
             self.assertAlmostEqual(index.fraction(os.path.realpath("m.py"), 1, 2), 0.5)
 
     def test_auto_detects_istanbul(self):
@@ -88,7 +88,7 @@ class FormatTests(unittest.TestCase):
             path = os.path.join(tmp, "cov.json")
             with open(path, "w") as handle:
                 json.dump(istanbul_json(src, 1), handle)
-            index = guard.load_coverage(path, "auto")
+            index = guard.load_coverage([path], "auto")
             self.assertEqual(index.fraction(src, 2, 7), 1.0)
 
     def test_bad_path_is_operational_error(self):
