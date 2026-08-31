@@ -42,6 +42,8 @@
       "Bash(npx @biomejs/biome:*)",
       "Bash(python3 *gauntlet/run.py:*)",
       "Bash(python3 *gauntlet/crap-guard.py:*)",
+      "Bash(npx playwright:*)",
+      "Bash(pnpm exec playwright:*)",
       "Bash(npm run:*)",
       "Bash(npm test:*)",
       "Bash(go run:*)",
