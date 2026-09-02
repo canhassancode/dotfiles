@@ -109,6 +109,41 @@ class TicketGuardTests(unittest.TestCase):
         self.assertEqual(result["exitCode"], 2)
 
 
+class TicketLintTests(unittest.TestCase):
+    def write_ticket(self, repo: "GauntletRepo", body: str) -> None:
+        with open(os.path.join(repo.root, ".gauntlet", "ticket.json"), "w") as f:
+            json.dump({"issue": "63", "title": "t", "body": body}, f)
+
+    def test_ticket_without_criteria_is_class_a(self):
+        with GauntletRepo() as repo:
+            self.write_ticket(repo, "## Summary\nJust rename the thing — no scenarios here.\n")
+            result = invoke("ticket-lint", "n1")
+        self.assertEqual(result["exitCode"], 1)
+        self.assertFalse(result["fit"])
+        self.assertEqual(result["class"], "A")
+
+    def test_well_formed_criteria_is_fit(self):
+        with GauntletRepo() as repo:
+            self.write_ticket(repo, "## Acceptance criteria\n- [ ] Given a, when b, then c\n")
+            result = invoke("ticket-lint", "n1")
+        self.assertEqual(result["exitCode"], 0)
+        self.assertTrue(result["fit"])
+        self.assertIsNone(result["class"])
+
+    def test_verdict_is_config_independent(self):
+        with GauntletRepo() as repo:
+            os.remove(os.path.join(repo.root, ".gauntlet", "config.json"))
+            self.write_ticket(repo, "## Acceptance criteria\n- [ ] Given a, when b, then c\n")
+            result = invoke("ticket-lint", "n1")
+        self.assertEqual(result["exitCode"], 0)
+        self.assertTrue(result["fit"])
+
+    def test_missing_ticket_is_operational(self):
+        with GauntletRepo() as repo:
+            result = invoke("ticket-lint", "n1")
+        self.assertEqual(result["exitCode"], 2)
+
+
 CRITERIA = [
     "Given an expired access token, when the client calls any route, then the response is 200",
     "Given ten parallel 401s, when they resolve, then exactly one refresh call was made",
@@ -768,8 +803,8 @@ class PreflightTests(unittest.TestCase):
             result = self.preflight("63")
             logs = os.listdir(os.path.join(repo.root, ".gauntlet", "runs")) if os.path.isdir(os.path.join(repo.root, ".gauntlet", "runs")) else []
         self.assertFalse(result["ok"])
-        self.assertEqual(result["failed"], "ticket")
-        self.assertIn("no '- [ ] Given", result["tail"])
+        self.assertEqual(result["failed"], "ticket-lint")
+        self.assertIn("class-A", result["tail"])
         self.assertEqual(logs, [])
 
     def test_unknown_origin_and_bad_from_are_named(self):

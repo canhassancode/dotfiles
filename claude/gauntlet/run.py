@@ -680,18 +680,26 @@ def resolve(guard: str, root: Path, config: dict) -> tuple[str | None, str | Non
 
 
 STAGES = ("specify", "coder", "cleaner", "qa", "ship")
-PREFLIGHT_GUARDS = ("clean-tree", "install", "setup", "build", "coverage")
+PREFLIGHT_GUARDS = ("ticket-lint", "clean-tree", "install", "setup", "build", "coverage")
 
 
 def write_ticket(root: Path, ref: str) -> dict:
     ticket = resolve_ticket(ref)
     if ticket["exitCode"] != 0:
         return ticket
-    if not criteria_from(ticket["body"]):
-        return {"exitCode": 1, "tail": f"ticket {ref} has no '- [ ] Given …, when …, then …' acceptance criteria — write them with /to-tickets first"}
     issue = ref if re.fullmatch(r"\d+", ref) else Path(ref).stem
     (root / ".gauntlet" / "ticket.json").write_text(json.dumps({"issue": issue, "title": ticket["title"], "body": ticket["body"]}))
     return {"exitCode": 0}
+
+
+def ticket_lint(root: Path) -> dict:
+    ticket_file = root / ".gauntlet" / "ticket.json"
+    if not ticket_file.exists():
+        return {"exitCode": 2, "tail": "no .gauntlet/ticket.json — resolve the ticket first"}
+    body = json.loads(ticket_file.read_text()).get("body", "")
+    if not criteria_from(body):
+        return {"exitCode": 1, "fit": False, "class": "A", "reason": "no '- [ ] Given …, when …, then …' acceptance criteria — class-A unfit (no observable behaviour), route to /implement"}
+    return {"exitCode": 0, "fit": True, "class": None, "reason": "shape ok"}
 
 
 GATE_CHAINS = {
@@ -740,6 +748,10 @@ def guard_result(guard: str, nonce: str, argument: str | None, root: Path, confi
 
     if guard == "ticket":
         result.update(write_ticket(root, argument or ""))
+        return result
+
+    if guard == "ticket-lint":
+        result.update(ticket_lint(root))
         return result
 
     if guard == "spec":
@@ -814,7 +826,7 @@ def preflight(ref: str, from_stage: str, root: Path, config: dict) -> dict:
     for guard in guards:
         result = guard_result(guard, f"preflight-{guard}", "green" if guard == "spec" else None, root, config)
         if result["exitCode"] != 0:
-            return {**outcome, "ok": False, "failed": guard, "exitCode": result["exitCode"], "tail": result.get("tail", "")}
+            return {**outcome, "ok": False, "failed": guard, "exitCode": result["exitCode"], "tail": result.get("tail") or result.get("reason", "")}
     return {**outcome, "ok": True, "headSha": git(root, "rev-parse", "HEAD")}
 
 
@@ -838,9 +850,10 @@ def main(argv: list[str]) -> int:
 
     guard, nonce = argv[0], argv[1]
     argument = argv[2] if len(argv) > 2 else None
-    if not config_file.exists():
+    if not config_file.exists() and guard != "ticket-lint":
         return emit({"nonce": nonce, "guard": guard, "exitCode": 2, "tail": "no .gauntlet/config.json in this repo"}, secret)
-    return emit(guard_result(guard, nonce, argument, root, json.loads(config_file.read_text())), secret)
+    config = json.loads(config_file.read_text()) if config_file.exists() else {}
+    return emit(guard_result(guard, nonce, argument, root, config), secret)
 
 
 def receipt(secret: str, nonce: str, exit_code: int, head: str | None = None, failed: str | None = None, gate: bool = False) -> str:
