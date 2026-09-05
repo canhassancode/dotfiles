@@ -80,7 +80,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "claude-opus-4-8",
+  "model": "opus[1m]",
   "disableBundledSkills": true,
   "hooks": {
     "PreToolUse": [
@@ -173,10 +173,11 @@
     "type": "command",
     "command": "bash $HOME/.claude/statusline-command.sh"
   },
-  "effortLevel": "medium",
+  "effortLevel": "high",
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
   "skipWorkflowUsageWarning": true,
   "theme": "auto",
-  "remoteControlAtStartup": false
+  "remoteControlAtStartup": false,
+  "outputStyle": "Concise"
 }
